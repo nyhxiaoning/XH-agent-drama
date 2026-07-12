@@ -9,6 +9,8 @@
 - **AI 生成**：可自定义接入多模型，支持图像生成、视频生成
 - **Prompt 模板引擎**：可自定义模板，自动注入景别/焦距/运镜/角色/场景/台词等变量
 - **一键启动**：Windows 双击 `start.bat` 即可运行，自动安装依赖、生成配置
+- **agent智能体一键创作**：内置两个agent智能体，可一键创作AI漫剧
+- **skills技能**：内置技能，可一键改编剧本，分镜，提示词
 
 - **感谢极光大佬开源的3D导演台功能：https://github.com/jiguang132/storyai-3d-director-desk
 
@@ -122,5 +124,9 @@ npm run dev
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | 管理员账号（首次启动自动创建） | `admin@xinghe.com` / `admin123456` |
 
 ## 📄 License
+有问题加QQ群讨论：
+<img width="1156" height="2055" alt="724b41085a20182c94d8391f80836075" src="https://github.com/user-attachments/assets/4ecfd61e-42c0-4b61-8842-89fba123c204" />
+
+
 
 MIT License
