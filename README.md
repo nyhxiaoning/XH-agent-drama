@@ -12,6 +12,25 @@
 
 - **感谢极光大佬开源的3D导演台功能：https://github.com/jiguang132/storyai-3d-director-desk
 
+<img width="1896" height="822" alt="image" src="https://github.com/user-attachments/assets/bdfb7de1-6ae4-469d-9944-abeefe0f0de7" />
+
+<img width="1920" height="810" alt="image" src="https://github.com/user-attachments/assets/2969f791-c80c-49cc-bdb3-9d389ce47ba8" />
+<img width="1884" height="709" alt="image" src="https://github.com/user-attachments/assets/40b8d694-ffcb-4834-8b78-11f679b31792" />
+<img width="1604" height="889" alt="image" src="https://github.com/user-attachments/assets/754c332b-1920-42ee-95ac-65624d4e8547" />
+
+<img width="1596" height="904" alt="image" src="https://github.com/user-attachments/assets/e8bac020-e26b-450a-96d5-2a41a47281e6" />
+
+<img width="1555" height="917" alt="image" src="https://github.com/user-attachments/assets/7925d911-048a-4176-9eff-a3500952958f" />
+
+
+
+
+
+
+
+
+
+
 ## 🚀 快速开始（本地开发）
 
 ### 环境要求
