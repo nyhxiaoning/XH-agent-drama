@@ -155,10 +155,22 @@ def _seed_model_configs(db: Session):
         ("wan2.7-t2v", "万相 T2V", "video", "阿里云万相文生视频模型", 100),
         ("wan2.7-i2v", "万相 I2V", "video", "阿里云万相图生视频模型", 100),
         ("wan2.7-r2v", "万相 R2V", "video", "阿里云万相参考视频模型", 100),
-        ("deepseek-v4-flash", "DeepSeek V4 Flash", "llm", "DeepSeek 快速推理模型", 0),
-        ("doubao-seed-2-1-turbo-260628", "豆包 Seed 2.1", "llm", "火山引擎豆包 LLM", 0),
+        ("viduq3-turbo", "Vidu Q3 Turbo", "video", "Modelink Vidu Q3 Turbo 视频生成模型（支持文生/图生/参考生/首尾帧）", 100),
+        ("gpt-5.6-terra", "GPT-5.6 Terra", "llm", "OpenAI GPT-5.6 Terra 旗舰大模型", 0),
     ]
     allowed_ids = {model_id for model_id, *_ in seeds}
+
+    # 已废弃的 LLM 模型（从种子列表中移除的模型，启动时自动清理）
+    deprecated_llm_ids = {"doubao-seed-2-1-turbo-260628", "deepseek-v4-flash"}
+    deprecated = (
+        db.query(ModelConfig)
+        .filter(ModelConfig.model_id.in_(deprecated_llm_ids))
+        .all()
+    )
+    for cfg in deprecated:
+        db.delete(cfg)
+    if deprecated:
+        logger.info("[seed] 清理已废弃 LLM 模型 %d 条: %s", len(deprecated), [c.model_id for c in deprecated])
 
     # 只清理图片/视频生成模型中的未接入配置，保留用户自己接入的语言大模型
     stale = (
@@ -370,12 +382,14 @@ async def lifespan(app: FastAPI):
     _ark_key_ok = bool(settings.VOLCENGINE_ARK_API_KEY) and "YOUR_" not in settings.VOLCENGINE_ARK_API_KEY
     _api91_key_ok = bool(settings.API91_API_KEY) and "YOUR_" not in settings.API91_API_KEY
     _dashscope_key_ok = bool(settings.DASHSCOPE_API_KEY) and "YOUR_" not in settings.DASHSCOPE_API_KEY
+    _modelink_key_ok = bool(settings.MODELINK_API_KEY) and "YOUR_" not in settings.MODELINK_API_KEY
     logger.info(
-        "[startup] LLM 配置: provider=%s model=%s | Ark key=%s (base=%s) | 91API key=%s (base=%s) | DashScope key=%s",
+        "[startup] LLM 配置: provider=%s model=%s | Ark key=%s (base=%s) | 91API key=%s (base=%s) | DashScope key=%s | Modelink key=%s (base=%s)",
         _llm_provider, _llm_model,
         "✓" if _ark_key_ok else "✗", settings.VOLCENGINE_ARK_API_BASE_URL,
         "✓" if _api91_key_ok else "✗", settings.API91_BASE_URL,
         "✓" if _dashscope_key_ok else "✗",
+        "✓" if _modelink_key_ok else "✗", settings.MODELINK_API_BASE_URL,
     )
     if _llm_provider == "api91" and not _api91_key_ok:
         logger.warning("[startup] ⚠ LLM_PROVIDER=api91 但 API91_API_KEY 未配置！LLM 调用将失败。")

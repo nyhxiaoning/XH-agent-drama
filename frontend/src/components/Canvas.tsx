@@ -61,7 +61,7 @@ function getEdgeEndpoints(
 
 export function Canvas({ onOpenAgent }: CanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
-  const { canvas, selectedNodeId, selectedEdgeId, connectingFrom, setSelectedNode, setSelectedEdge, setConnectingFrom, addNode, addEdge, updateEdgeType, updateNodePos, updateNodeData, deleteNode, triggerGenerate, deleteEdge, loadModelPricing, loadEnabledModels } = useEditorStore();
+  const { canvas, selectedNodeId, selectedEdgeId, connectingFrom, setSelectedNode, setSelectedEdge, setConnectingFrom, addNode, addEdge, updateEdgeType, updateNodePos, updateNodeData, deleteNode, triggerGenerate, deleteEdge, loadModelPricing, loadEnabledModels, loadRuntimeModels } = useEditorStore();
   const [dragLine, setDragLine] = useState<DragLine | null>(null);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -193,11 +193,13 @@ useEffect(() => {
 applyTransform();
 }, [applyTransform]);
 
-// 加载模型定价（用于 NodeCard 预估扣费）和已启用模型列表（用于过滤已禁用模型）
+// 加载模型定价（用于 NodeCard 预估扣费）、已启用模型列表（用于过滤已禁用模型）
+// 以及运行时模型配置（从后端 .env 同步，动态更新前端模型列表）
 useEffect(() => {
 loadModelPricing();
 loadEnabledModels();
-}, [loadModelPricing, loadEnabledModels]);
+loadRuntimeModels();
+}, [loadModelPricing, loadEnabledModels, loadRuntimeModels]);
 
 
 

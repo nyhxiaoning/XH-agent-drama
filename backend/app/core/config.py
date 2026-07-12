@@ -43,8 +43,17 @@ class Settings(BaseSettings):
     API91_BASE_URL: str = os.getenv("API91_BASE_URL", "https://api.91api.com")
     API91_API_KEY: str = os.getenv("API91_API_KEY", "")
 
+    # Modelink 配置（Vidu Q3 Turbo 等视频模型）
+    MODELINK_API_BASE_URL: str = os.getenv(
+        "MODELINK_API_BASE_URL", "https://api.qnaigc.com"
+    )
+    MODELINK_API_KEY: str = os.getenv("MODELINK_API_KEY", "")
+    MODELINK_VIDEO_MODEL_ID: str = os.getenv(
+        "MODELINK_VIDEO_MODEL_ID", "viduq3-turbo"
+    )
+
     # 默认 LLM 与图片模型
-    LLM_MODEL_NAME: str = os.getenv("LLM_MODEL_NAME", "doubao-seed-2-1-turbo-260628")
+    LLM_MODEL_NAME: str = os.getenv("LLM_MODEL_NAME", "gpt-5.6-terra")
     # LLM 提供商：ark（火山方舟）或 api91（91API）
     LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "ark")
     IMAGE_MODEL_GPT_IMAGE_2: str = os.getenv("IMAGE_MODEL_GPT_IMAGE_2", "gpt-image-2")
@@ -104,11 +113,11 @@ class Settings(BaseSettings):
 
     # ── #6 模型分级策略 ──────────────────────────────
     # 轻量模型：路由决策、参数提取、简单审核（快速、低成本）
-    LLM_MODEL_LITE: str = os.getenv("LLM_MODEL_LITE", "doubao-seed-1-6-lite-250615")
+    LLM_MODEL_LITE: str = os.getenv("LLM_MODEL_LITE", "gpt-5.6-terra")
     # 标准模型：质检审核、中等复杂度任务
-    LLM_MODEL_STANDARD: str = os.getenv("LLM_MODEL_STANDARD", "doubao-seed-2-1-turbo-260628")
+    LLM_MODEL_STANDARD: str = os.getenv("LLM_MODEL_STANDARD", "gpt-5.6-terra")
     # 旗舰模型：剧本创作、分镜设计等高复杂度创意任务
-    LLM_MODEL_CREATIVE: str = os.getenv("LLM_MODEL_CREATIVE", "doubao-seed-2-1-turbo-260628")
+    LLM_MODEL_CREATIVE: str = os.getenv("LLM_MODEL_CREATIVE", "gpt-5.6-terra")
 
     # ── #8 动态并发控制 ──────────────────────────────
     # 全局 LLM 并发上限（同时进行的 LLM HTTP 请求）

@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1 import canvas, node, edge, tasks, ws, agent, asset, snapshot, auth, credit, user, recharge, announcement, admin, payment, callback, enhanced, skill_conversation, preset
+from app.api.v1 import canvas, node, edge, tasks, ws, agent, asset, snapshot, auth, credit, user, recharge, announcement, admin, payment, callback, enhanced, skill_conversation, preset, config
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -21,3 +21,4 @@ api_router.include_router(callback.router)
 api_router.include_router(enhanced.router)
 api_router.include_router(skill_conversation.router)
 api_router.include_router(preset.router)
+api_router.include_router(config.router)

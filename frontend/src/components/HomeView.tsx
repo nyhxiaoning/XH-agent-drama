@@ -6,7 +6,7 @@ import {
   ChevronRight, FolderOpen, User,
   FilePlus, Upload, Search, Package, Film, BookOpen, Wand2,
   Palette, MapPin, Music, Loader2, Video, Layers, Film as FilmIcon, LayoutGrid,
-  Zap, AlertCircle, type LucideIcon
+  Zap, AlertCircle, Clapperboard as ClapperIcon, PenLine, type LucideIcon
 } from 'lucide-react';
 import { useEditorStore } from '@/store/editor';
 import { api } from '@/utils/api';
@@ -38,6 +38,8 @@ const FEATURES = [
   { title: 'AI漫剧全流程', skill_id: 'drama-generator-pro', desc: '小说一键生成完整漫剧素材包含Excel', icon: Layers, color: 'from-teal-700 to-emerald-900' },
   { title: '3D精品漫剧', skill_id: 'muzi-3d-generator', desc: '3D分镜脚本+角色场景生图提示词', icon: FilmIcon, color: 'from-emerald-600 to-teal-800' },
   { title: 'Seedance提示词', skill_id: 'seedance-prompt-zh', desc: '即梦Seedance 2.0多模态视频提示词', icon: Video, color: 'from-amber-600 to-red-700' },
+  { title: '短剧剧本创作', skill_id: 'xyq-short-drama', desc: '一句话创意展开为完整短剧剧本', icon: PenLine, color: 'from-violet-600 to-purple-700' },
+  { title: '分镜导演台本', skill_id: 'storyboard-director', desc: '小说自动拆解为专业分镜导演台本', icon: ClapperIcon, color: 'from-fuchsia-600 to-pink-700' },
 ];
 
 const SCRIPT_TEMPLATES = [
@@ -108,6 +110,30 @@ const SKILL_TEMPLATES: SkillTemplate[] = [
       { name: '场景类型', type: 'select', options: ['人物一致性', '运镜精准复刻', '创意模版/特效复刻', '视频延长', '视频编辑', '音乐卡点', '对话与声音演绎', '一镜到底', '电商/产品展示', '科普/教育内容', 'AI短剧/漫改', '视频融合/续写'], default: '人物一致性' },
       { name: '生成时长', type: 'select', options: ['4秒', '5秒', '8秒', '10秒', '13秒', '15秒'], default: '10秒' },
       { name: '素材说明', type: 'text', default: '', description: '已有素材说明（如：3张图片、1个参考视频等），无则留空' },
+    ],
+  },
+  {
+    skill_id: 'xyq-short-drama',
+    title: '短剧剧本创作',
+    desc: '一句话创意展开为完整短剧剧本（含世界观、角色、分集剧本）',
+    icon: PenLine,
+    params: [
+      { name: '题材类型', type: 'select', options: ['悬疑推理', '甜宠恋爱', '都市职场', '古装权谋', '奇幻冒险', '治愈温情', '爽文逆袭', '校园青春', '家庭伦理', '末日生存'], default: '悬疑推理' },
+      { name: '集数', type: 'select', options: ['5集', '10集', '15集', '20集', '30集'], default: '10集' },
+      { name: '每集场数', type: 'select', options: ['3场', '4场', '5场'], default: '4场' },
+      { name: '情感基调', type: 'select', options: ['温情', '刺激', '搞笑', '虐心', '爽感', '悬疑'], default: '悬疑' },
+    ],
+  },
+  {
+    skill_id: 'storyboard-director',
+    title: '分镜导演台本',
+    desc: '小说/故事自动拆解为专业分镜导演台本（含景别、运镜、对话、音效）',
+    icon: ClapperIcon,
+    params: [
+      { name: '风格', type: 'select', options: ['写实', '动画', '3D', '水墨国风', '赛博朋克'], default: '写实' },
+      { name: '画幅', type: 'select', options: ['9:16竖屏', '16:9横屏', '1:1方形'], default: '9:16竖屏' },
+      { name: '镜头数限制', type: 'select', options: ['20镜', '30镜', '50镜', '80镜', '不限'], default: '30镜' },
+      { name: '目标平台', type: 'select', options: ['抖音', '快手', 'B站', '小红书', 'YouTube'], default: '抖音' },
     ],
   },
 ];

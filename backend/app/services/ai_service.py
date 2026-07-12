@@ -305,6 +305,11 @@ class AIService:
             api_key = settings.API91_API_KEY
             if _is_placeholder_key(api_key):
                 raise RuntimeError("请在 .env 中配置 API91_API_KEY")
+        elif api_type == "modelink":
+            base_url = settings.MODELINK_API_BASE_URL
+            api_key = settings.MODELINK_API_KEY
+            if _is_placeholder_key(api_key):
+                raise RuntimeError("请在 .env 中配置 MODELINK_API_KEY")
         else:
             raise ValueError(f"不支持的 API 类型: {api_type}")
 
@@ -1126,6 +1131,8 @@ class AIService:
             return await AIService._generate_video_seedance(prompt, model, options)
         if normalized in {"wan2.7-video", "wan2.7-i2v", "wan2.7-t2v", "wan2.7-r2v"}:
             return await AIService._generate_video_wan27(prompt, model, options)
+        if normalized in {"viduq3-turbo", "vidu-q3-turbo", settings.MODELINK_VIDEO_MODEL_ID.lower()}:
+            return await AIService._generate_video_modelink(prompt, model, options)
 
         raise ValueError(f"不支持的视频模型: {model}")
 
@@ -1332,6 +1339,99 @@ class AIService:
             return {"taskId": task_id, "status": "pending", **response}
         return response
 
+    @staticmethod
+    async def _generate_video_modelink(prompt: str, model: str, options: Dict[str, Any]) -> Any:
+        """调用 Modelink API 创建 Vidu Q3 Turbo 视频生成任务。
+
+        支持四种生成模式（自动路由）：
+          - text-to-video: 无参考图
+          - image-to-video: 1 张参考图
+          - reference-to-video: 2-7 张参考图（非首尾帧）
+          - start-end-to-video: 2 张参考图标记为首尾帧
+
+        所有端点路径带 /turbo 后缀，服务端内部模型 ID 为 viduq3-turbo。
+        鉴权: Bearer MODELINK_API_KEY
+        """
+        refs_raw = options.get("reference_images") or []
+        # 本地/localhost 参考图先转存 COS，否则 Modelink 服务器无法访问
+        refs_pub = [await _to_public_cos_url(u, "vidu-ref") for u in refs_raw if isinstance(u, str) and u.strip()]
+        refs = [u for u in refs_pub if u and u.startswith(("http://", "https://"))]
+
+        # 是否为首尾帧模式：前端通过 options["start_end_frame"] = true 标记
+        is_start_end = bool(options.get("start_end_frame") or options.get("startEndFrame"))
+
+        # 选择端点
+        if not refs:
+            endpoint = "/queue/fal-ai/vidu/q3/text-to-video/turbo"
+            payload: Dict[str, Any] = {"prompt": prompt}
+            # 文生视频支持 aspect_ratio、style
+            ar = _get_option(options, "aspect_ratio", "aspectRatio", "16:9")
+            if ar:
+                payload["aspect_ratio"] = ar
+            style = _get_option(options, "style", "style", "")
+            if style:
+                payload["style"] = style
+            bgm = options.get("bgm")
+            if bgm is not None:
+                payload["bgm"] = bool(bgm)
+            logger.info("[AIService] Modelink Vidu Q3 Turbo text-to-video refs=0")
+        elif len(refs) == 1 and not is_start_end:
+            endpoint = "/queue/fal-ai/vidu/q3/image-to-video/turbo"
+            payload = {"prompt": prompt, "image_url": refs[0]}
+            logger.info("[AIService] Modelink Vidu Q3 Turbo image-to-video refs=1")
+        elif len(refs) == 2 and is_start_end:
+            endpoint = "/queue/fal-ai/vidu/q3/start-end-to-video/turbo"
+            payload = {"start_image_url": refs[0], "end_image_url": refs[1]}
+            if prompt:
+                payload["prompt"] = prompt
+            logger.info("[AIService] Modelink Vidu Q3 Turbo start-end-to-video refs=2")
+        else:
+            # 1-7 张参考图走 reference-to-video
+            endpoint = "/queue/fal-ai/vidu/q3/reference-to-video/turbo"
+            payload = {"prompt": prompt, "reference_image_urls": refs[:7]}
+            ar = _get_option(options, "aspect_ratio", "aspectRatio", "16:9")
+            if ar:
+                payload["aspect_ratio"] = ar
+            bgm = options.get("bgm")
+            if bgm is not None:
+                payload["bgm"] = bool(bgm)
+            audio = options.get("audio")
+            if audio is not None:
+                payload["audio"] = bool(audio)
+            logger.info("[AIService] Modelink Vidu Q3 Turbo reference-to-video refs=%d", len(refs))
+
+        # 公共可选参数
+        duration = int(options.get("durationSec") or options.get("duration") or 5)
+        # Vidu Q3 Turbo 支持 1-16 秒（reference-to-video 为 3-16 秒）
+        duration = max(1, min(16, duration))
+        payload["duration"] = duration
+
+        resolution = str(options.get("resolution") or "").strip().lower()
+        if resolution in {"540p", "720p", "1080p"}:
+            payload["resolution"] = resolution
+
+        movement_amplitude = _get_option(options, "movement_amplitude", "movementAmplitude", "")
+        if movement_amplitude in {"auto", "small", "medium", "large"}:
+            payload["movement_amplitude"] = movement_amplitude
+
+        seed = options.get("seed")
+        if seed and int(seed) != 0:
+            payload["seed"] = int(seed)
+
+        logger.info("[AIService] Modelink payload: endpoint=%s duration=%s res=%s", endpoint, duration, resolution)
+        response = await AIService._post(endpoint, payload, "modelink")
+
+        # Modelink 返回 {"status": "IN_QUEUE", "request_id": "...", "response_url": "..."}
+        request_id = response.get("request_id") if isinstance(response, dict) else None
+        if request_id:
+            return {
+                "taskId": str(request_id),
+                "status": "pending",
+                "response_url": response.get("response_url", ""),
+                **response,
+            }
+        return response
+
     # ------------------------------------------------------------------
     # Status Checks
     # ------------------------------------------------------------------
@@ -1393,6 +1493,53 @@ class AIService:
                 "failed" if task_status in {"FAILED", "CANCELED"} else "processing"
             )
             return {**data, "status": mapped, "video_url": data.get("output", {}).get("video_url")}
+
+        if normalized in {"viduq3-turbo", "vidu-q3-turbo", settings.MODELINK_VIDEO_MODEL_ID.lower()}:
+            # Modelink 通过 response_url 轮询任务状态
+            # response_url 在创建任务时返回，存在 task.params["_response_url"] 中
+            # 如果没有 response_url，尝试用 request_id 构造查询 URL
+            response_url = None
+            # ai_worker 会把 response_url 存到 task.params 中，check_video_status 只能拿到 task_id 和 model
+            # 这里尝试用 request_id 直接 GET response_url（由调用方传入 _response_url）
+            # 由于 check_video_status 签名限制，我们利用 task_id 本身作为 request_id
+            # 如果 response_url 存在于 task.params，ai_worker 会在调用前将其拼入 task_id 参数
+            # 实际实现：ai_worker 将 response_url 存入 task.params["_response_url"]，
+            # 然后在轮询前通过特殊格式 "task_id|response_url" 传入
+            if "|" in task_id:
+                _real_id, response_url = task_id.split("|", 1)
+            else:
+                # 没有 response_url 时，尝试用 request_id 构造（Fal 队列查询地址）
+                response_url = _join_url(
+                    settings.MODELINK_API_BASE_URL,
+                    f"/queue/fal-ai/vidu/q3/text-to-video/turbo/requests/{task_id}",
+                )
+
+            headers = {"Authorization": f"Bearer {settings.MODELINK_API_KEY}"}
+            try:
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(response_url, headers=headers, timeout=120)
+                    resp.raise_for_status()
+                    data = resp.json()
+            except Exception as exc:
+                logger.warning("[AIService] Modelink 状态查询失败 task=%s err=%s", task_id, exc)
+                return {"status": "processing"}
+
+            raw_status = str(data.get("status") or "").lower()
+            mapped = (
+                "completed" if raw_status in {"completed", "success", "succeeded", "done", "COMPLETED"} else
+                "failed" if raw_status in {"failed", "error", "canceled", "cancelled"} else "processing"
+            )
+
+            # 提取 video_url：Modelink 返回格式可能为 data.video_url 或 data.output.video_url
+            video_url = data.get("video_url")
+            if not video_url:
+                output = data.get("output") or data.get("data") or {}
+                if isinstance(output, dict):
+                    video_url = output.get("video_url") or output.get("url")
+                elif isinstance(output, list) and output:
+                    video_url = output[0].get("video_url") or output[0].get("url") if isinstance(output[0], dict) else None
+
+            return {**data, "status": mapped, "video_url": video_url}
 
         return {"status": "processing"}
 

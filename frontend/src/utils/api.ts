@@ -234,6 +234,22 @@ export interface EnabledModel {
   type: string;
 }
 
+export interface RuntimeModelItem {
+  model_id: string;
+  label: string;
+  provider: string;
+  type: string;
+}
+
+export interface RuntimeModelsResponse {
+  llm_models: RuntimeModelItem[];
+  image_models: RuntimeModelItem[];
+  video_models: RuntimeModelItem[];
+  audio_models: RuntimeModelItem[];
+  default_llm_model: string;
+  llm_provider: string;
+}
+
 export interface LlmModel {
   model_id: string;
   name: string;
@@ -289,6 +305,7 @@ export const api = {
   getCreditsPricing: () => request<{ pricing: Record<string, unknown> }>('/credits/pricing'),
   getModelPricing: () => request<ModelPricing[]>('/credits/model-pricing'),
   getEnabledModels: () => request<EnabledModel[]>('/credits/enabled-models'),
+  getRuntimeModels: () => request<RuntimeModelsResponse>('/config/runtime-models'),
   estimateCreditCost: (taskType: string, nodeConfig?: Record<string, unknown>) =>
     request<CreditEstimate>(`/credits/estimate?task_type=${encodeURIComponent(taskType)}`, {
       method: 'POST',

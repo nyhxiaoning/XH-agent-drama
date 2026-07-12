@@ -461,6 +461,12 @@ class AIWorker:
         logger.info("[AIWorker] 视频任务已提交 task=%s video_task=%s，开始轮询", task.id, video_task_id)
         # 暂存外部 video_task_id 到 params，供 /api/ark/callback 回调查找使用
         task.params["_video_task_id"] = video_task_id
+        # Modelink 需要暂存 response_url 用于轮询
+        is_modelink = model.lower() in {"viduq3-turbo", "vidu-q3-turbo"}
+        response_url = result.get("response_url", "") if is_modelink else ""
+        if response_url:
+            task.params["_response_url"] = response_url
+            logger.info("[AIWorker] Modelink response_url=%s", response_url)
         # 超时从 5 分钟提升到 15 分钟（Seedance 2.0 生成 10s/15s 视频通常需要 5-10 分钟）
         poll_timeout = 900
         deadline = time.monotonic() + poll_timeout
@@ -512,7 +518,11 @@ class AIWorker:
                 await self._report_progress(task.id, simulated_progress)
 
             try:
-                status_resp = await AIService.check_video_status(video_task_id, model)
+                # Modelink 需要传 response_url 给 check_video_status
+                if is_modelink and response_url:
+                    status_resp = await AIService.check_video_status(f"{video_task_id}|{response_url}", model)
+                else:
+                    status_resp = await AIService.check_video_status(video_task_id, model)
             except Exception as exc:
                 logger.warning("[AIWorker] 视频状态查询失败 task=%s err=%s", task.id, exc)
                 await asyncio.sleep(poll_interval)
@@ -747,6 +757,7 @@ class AIWorker:
             provider_ready = (
                 (model.startswith("doubao-seedance") and _has_real_key(settings.VOLCENGINE_ARK_API_KEY))
                 or ("wan" in model and _has_real_key(settings.DASHSCOPE_API_KEY))
+                or (model in {"viduq3-turbo", "vidu-q3-turbo"} and _has_real_key(settings.MODELINK_API_KEY))
             )
             if provider_ready:
                 return await self._generate_video_ai(task)

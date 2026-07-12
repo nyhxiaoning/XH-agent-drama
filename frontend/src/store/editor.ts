@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { Canvas, CanvasNode, CanvasEdge, WSMessage, CanvasListItem } from '@/types';
 import { api } from '@/utils/api';
 import type { ModelPricing, EnabledModel } from '@/utils/api';
-import { setEnabledModelIds } from '@/utils/model-config';
+import { setEnabledModelIds, loadRuntimeModels } from '@/utils/model-config';
 
 interface EditorState {
   canvas: Canvas | null;
@@ -32,6 +32,7 @@ interface EditorState {
   setError: (msg: string | null) => void;
   loadModelPricing: () => Promise<void>;
   loadEnabledModels: () => Promise<void>;
+  loadRuntimeModels: () => Promise<void>;
 
   loadCanvasList: (forceRefresh?: boolean) => Promise<void>;
   loadCanvas: (id: string) => Promise<void>;
@@ -93,6 +94,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     } catch {
       // 静默失败，使用硬编码列表作为降级
     }
+  },
+
+  loadRuntimeModels: async () => {
+    await loadRuntimeModels();
   },
 
   loadCanvasList: async (forceRefresh = false) => {

@@ -45,7 +45,7 @@ export interface SkillDef {
 
 // ─── 图标映射 ────────────────────────────────────────
 
-import { BookOpen, Clapperboard, Video, Layers, Film } from 'lucide-react';
+import { BookOpen, Clapperboard, Video, Layers, Film, PenLine, Clapperboard as ClapperIcon } from 'lucide-react';
 
 const ICON_MAP: Record<string, LucideIcon> = {
   BookOpen,
@@ -53,6 +53,8 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Video,
   Layers,
   Film,
+  PenLine,
+  ClapperIcon,
 };
 
 // 技能专属渐变色
@@ -62,6 +64,8 @@ const SKILL_GRADIENTS: Record<string, string> = {
   'drama-generator-pro': 'from-teal-600 to-emerald-600',
   'muzi-3d-generator': 'from-emerald-500 to-lime-500',
   'seedance-prompt-zh': 'from-orange-500 to-amber-500',
+  'xyq-short-drama': 'from-violet-600 to-purple-600',
+  'storyboard-director': 'from-fuchsia-500 to-pink-600',
 };
 
 function getIcon(name: string): LucideIcon {
@@ -106,6 +110,18 @@ function getGuideSteps(skillId: string): { title: string; desc: string }[] {
         { title: '多模态提示词', desc: '可选填写已有素材说明' },
         { title: 'Seedance 2.0', desc: '生成可直接使用的视频提示词' },
       ];
+    case 'xyq-short-drama':
+      return [
+        { title: '输入创意描述', desc: '一句话描述你的短剧创意想法' },
+        { title: '选择题材参数', desc: '指定题材类型、集数、情感基调' },
+        { title: '生成完整剧本', desc: '输出世界观、角色设定、分集剧本' },
+      ];
+    case 'storyboard-director':
+      return [
+        { title: '输入故事文本', desc: '粘贴小说/故事/剧本片段' },
+        { title: '镜头语言分析', desc: '自动执行两轴查询与风险注入' },
+        { title: '输出分镜台本', desc: '多宫格分镜板+视频提示词' },
+      ];
     default:
       return [
         { title: '输入内容', desc: '在下方输入框中输入内容' },
@@ -122,6 +138,8 @@ function getPlaceholder(skillId: string): string {
     case 'drama-generator-pro': return '在此粘贴小说原文，一键生成完整漫剧素材...';
     case 'muzi-3d-generator': return '在此输入小说片段或剧本，生成3D漫剧素材...';
     case 'seedance-prompt-zh': return '描述你想创作的视频内容、主题或创意...';
+    case 'xyq-short-drama': return '输入一句话创意，如：快递小哥意外获得读心术...';
+    case 'storyboard-director': return '粘贴故事/小说/剧本片段，生成分镜导演台本...';
     default: return '输入内容...';
   }
 }
@@ -138,6 +156,10 @@ function getExamples(skillId: string): string[] {
       return ['少年在魔法学院觉醒暗属性天赋', '机器人与人类少女的跨物种友谊'];
     case 'seedance-prompt-zh':
       return ['赛博朋克城市夜景中的飞行汽车', '古风女子在桃花林中翩翩起舞'];
+    case 'xyq-short-drama':
+      return ['快递小哥意外获得读心术，发现客户秘密', '考古队在古墓中发现活了千年的少女'];
+    case 'storyboard-director':
+      return ['雨夜破庙前，男主握长剑而立，黑衣人持刀逼近...', '咖啡店里两个陌生人的眼神交汇，时间仿佛静止'];
     default:
       return ['试试输入你的创意...'];
   }

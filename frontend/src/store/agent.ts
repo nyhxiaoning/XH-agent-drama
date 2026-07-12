@@ -687,7 +687,7 @@ export const STEP_OPTION_DEFINITIONS: Record<AgentStepKey, { id: string; label: 
     { id: 'storyboard_density', label: '分镜密度', choices: ['每场景1镜', '2-3镜', '多镜'] },
     { id: 'emotional_focus', label: '情绪焦点', choices: ['facial', '身体语言', '环境', '道具', '群像', '眼神', '手部', '脚步', '背影', '空镜'] },
     { id: 'continuity_strictness', label: '连续性', choices: ['严格连续', '宽松'] },
-    { id: 'video_model', label: '视频模型', choices: ['Seedance', 'Wan2.7'] },
+    { id: 'video_model', label: '视频模型', choices: ['Seedance', 'Wan2.7', 'Vidu Q3 Turbo'] },
     { id: 'video_duration', label: '单镜时长', choices: ['3秒', '5秒', '8秒'] },
     { id: 'video_ratio', label: '视频比例', choices: ['9:16', '16:9', '1:1', '3:4'] },
     { id: 'video_quality', label: '视频质量', choices: ['高质量', '快速'] },

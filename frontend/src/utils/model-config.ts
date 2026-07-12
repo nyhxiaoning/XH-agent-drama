@@ -5,31 +5,39 @@ export interface ModelOption {
   type: 'llm' | 'image' | 'video' | 'audio';
 }
 
-export const LLM_MODELS: ModelOption[] = [
-  { id: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash', provider: '91API', type: 'llm' },
-  { id: 'doubao-seed-2-1-turbo-260628', label: 'Doubao Seed 2.1 Turbo', provider: '火山方舟', type: 'llm' },
-  { id: 'gpt-4o', label: 'GPT-4o', provider: 'OpenAI', type: 'llm' },
-  { id: 'gpt-4o-mini', label: 'GPT-4o Mini', provider: 'OpenAI', type: 'llm' },
+// ── 硬编码默认列表（降级回退用） ──
+const _DEFAULT_LLM_MODELS: ModelOption[] = [
+  { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra', provider: 'OpenAI', type: 'llm' },
 ];
 
-export const IMAGE_MODELS: ModelOption[] = [
+const _DEFAULT_IMAGE_MODELS: ModelOption[] = [
   { id: 'gpt-image-2', label: 'GPT Image 2', provider: '91API', type: 'image' },
   { id: 'gemini-3.1-flash-lite-image', label: 'Gemini 3.1 Flash Lite', provider: '91API', type: 'image' },
   { id: 'doubao-seedream-5-0-pro-260628', label: '豆包 Seedream 5.0 Pro', provider: '火山方舟', type: 'image' },
 ];
 
-export const VIDEO_MODELS: ModelOption[] = [
+const _DEFAULT_VIDEO_MODELS: ModelOption[] = [
   { id: 'doubao-seedance-2-0-260128', label: 'Seedance 2.0', provider: '火山方舟', type: 'video' },
   { id: 'doubao-seedance-2-0-fast-260128', label: 'Seedance 2.0 Fast', provider: '火山方舟', type: 'video' },
   { id: 'wan2.7-video', label: '万相 2.7 视频', provider: '阿里云百炼', type: 'video' },
   { id: 'wan2.7-t2v', label: '万相 2.7 T2V', provider: '阿里云百炼', type: 'video' },
   { id: 'wan2.7-i2v', label: '万相 2.7 I2V', provider: '阿里云百炼', type: 'video' },
   { id: 'wan2.7-r2v', label: '万相 2.7 R2V', provider: '阿里云百炼', type: 'video' },
+  { id: 'viduq3-turbo', label: 'Vidu Q3 Turbo', provider: 'Modelink', type: 'video' },
 ];
 
-export const AUDIO_MODELS: ModelOption[] = [
+const _DEFAULT_AUDIO_MODELS: ModelOption[] = [
   { id: 'default', label: '默认语音合成', provider: '系统', type: 'audio' },
 ];
+
+// ── 运行时模型列表（启动时从后端 /config/runtime-models 拉取并合并） ──
+let LLM_MODELS: ModelOption[] = [..._DEFAULT_LLM_MODELS];
+let IMAGE_MODELS: ModelOption[] = [..._DEFAULT_IMAGE_MODELS];
+let VIDEO_MODELS: ModelOption[] = [..._DEFAULT_VIDEO_MODELS];
+let AUDIO_MODELS: ModelOption[] = [..._DEFAULT_AUDIO_MODELS];
+
+// 运行时默认 LLM 模型 ID（从后端 .env 同步）
+let _runtimeDefaultLlm = '';
 
 export const ASPECT_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4', '21:9'];
 
@@ -52,6 +60,7 @@ export const VIDEO_DURATION_OPTIONS: Record<string, number[]> = {
   'wan2.7-t2v': [3, 5, 8, 10, 15],
   'wan2.7-i2v': [3, 5, 8, 10, 15],
   'wan2.7-r2v': [3, 5, 8, 10],
+  'viduq3-turbo': [3, 5, 8, 10, 16],
 };
 
 // 视频模型按分辨率
@@ -62,6 +71,7 @@ export const VIDEO_RESOLUTION_OPTIONS: Record<string, string[]> = {
   'wan2.7-t2v': ['720P', '1080P'],
   'wan2.7-i2v': ['720P', '1080P'],
   'wan2.7-r2v': ['720P', '1080P'],
+  'viduq3-turbo': ['540p', '720p', '1080p'],
 };
 
 // 视频模型按比例（wan2.7-i2v 跟随首帧，不展示比例）
@@ -72,12 +82,14 @@ export const VIDEO_ASPECT_RATIO_OPTIONS: Record<string, string[]> = {
   'wan2.7-t2v': ['16:9', '9:16', '1:1', '4:3', '3:4'],
   'wan2.7-i2v': [],
   'wan2.7-r2v': ['16:9', '9:16', '1:1', '4:3', '3:4'],
+  'viduq3-turbo': ['16:9', '9:16', '1:1', '4:3', '3:4'],
 };
 
-// 支持声音生成的视频模型（仅 Seedance 2.0 系列）
+// 支持声音生成的视频模型（Seedance 2.0 系列 + Vidu Q3 Turbo）
 export const VIDEO_SOUND_SUPPORT = new Set<string>([
   'doubao-seedance-2-0-260128',
   'doubao-seedance-2-0-fast-260128',
+  'viduq3-turbo',
 ]);
 
 // 支持 watermark 参数的视频模型
@@ -88,6 +100,7 @@ export const VIDEO_WATERMARK_SUPPORT = new Set<string>([
   'wan2.7-t2v',
   'wan2.7-i2v',
   'wan2.7-r2v',
+  'viduq3-turbo',
 ]);
 
 export function getVideoDurations(model: string): number[] {
@@ -132,6 +145,54 @@ export const STYLE_PRESETS: StylePreset[] = [
 ];
 
 /**
+ * 从后端 /config/runtime-models 拉取 .env 配置的模型列表，合并到运行时列表中。
+ * - 后端返回的模型如果不在硬编码列表中，则追加
+ * - 已存在的则用后端的 label/provider 覆盖更新
+ * - 同步更新默认 LLM 模型 ID
+ *
+ * 由 editor store 在启动时调用，失败时静默降级使用硬编码列表。
+ */
+export async function loadRuntimeModels(): Promise<void> {
+  try {
+    const { api } = await import('@/utils/api');
+    const res = await api.getRuntimeModels();
+
+    // 合并函数：后端模型追加到硬编码列表前面（优先展示），已有的更新 label/provider
+    const mergeModels = (defaults: ModelOption[], runtime: { model_id: string; label: string; provider: string; type: string }[]): ModelOption[] => {
+      const merged: ModelOption[] = [];
+      const seen = new Set<string>();
+
+      // 先放后端返回的模型（.env 配置的优先展示）
+      for (const r of runtime) {
+        if (!r.model_id) continue;
+        merged.push({ id: r.model_id, label: r.label || r.model_id, provider: r.provider || '', type: r.type as ModelOption['type'] });
+        seen.add(r.model_id);
+      }
+      // 再追加硬编码列表中不重复的
+      for (const d of defaults) {
+        if (!seen.has(d.id)) {
+          merged.push(d);
+          seen.add(d.id);
+        }
+      }
+      return merged;
+    };
+
+    LLM_MODELS = mergeModels(_DEFAULT_LLM_MODELS, res.llm_models || []);
+    IMAGE_MODELS = mergeModels(_DEFAULT_IMAGE_MODELS, res.image_models || []);
+    VIDEO_MODELS = mergeModels(_DEFAULT_VIDEO_MODELS, res.video_models || []);
+    AUDIO_MODELS = mergeModels(_DEFAULT_AUDIO_MODELS, res.audio_models || []);
+
+    // 同步默认 LLM 模型
+    if (res.default_llm_model) {
+      _runtimeDefaultLlm = res.default_llm_model;
+    }
+  } catch {
+    // 静默失败，使用硬编码列表作为降级
+  }
+}
+
+/**
  * 动态已启用模型 ID 集合（由 store 加载后调用 setEnabledModelIds 更新）。
  * 为空时降级返回硬编码列表。
  */
@@ -167,7 +228,7 @@ export function getDefaultModelForNodeType(nodeType: string): string {
   if (nodeType === 'storyboard') return 'gpt-image-2';
   if (nodeType === 'video') return 'doubao-seedance-2-0-260128';
   if (nodeType === 'audio') return 'default';
-  if (nodeType === 'script') return 'deepseek-v4-flash';
+  if (nodeType === 'script') return _runtimeDefaultLlm || 'deepseek-v4-flash';
   return '';
 }
 

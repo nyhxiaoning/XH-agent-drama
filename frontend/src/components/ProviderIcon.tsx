@@ -89,6 +89,23 @@ export function ProviderIcon({ provider, modelId, size = 14, className = '' }: P
     );
   }
 
+  if (key.includes('modelink') || key.includes('vidu') || mid.includes('vidu')) {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className} aria-hidden>
+        <defs>
+          <linearGradient id="vidu-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#6366F1"/>
+            <stop offset="50%" stopColor="#8B5CF6"/>
+            <stop offset="100%" stopColor="#EC4899"/>
+          </linearGradient>
+        </defs>
+        {/* Vidu 标志性播放按钮三角形 */}
+        <circle cx="12" cy="12" r="10" fill="url(#vidu-grad)"/>
+        <path d="M10 8.5L16 12L10 15.5V8.5Z" fill="white"/>
+      </svg>
+    );
+  }
+
   if (key.includes('deepseek')) {
     return (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className} aria-hidden>
