@@ -16,21 +16,26 @@ logger = logging.getLogger(__name__)
 
 
 def _sanitize_llm_model(model_id: Optional[str]) -> str:
-    """拦截已废弃的 LLM 模型 ID，替换为全局默认模型。
+    """拦截已废弃的 LLM 模型 ID，替换为硬编码的安全默认模型。
 
-    硬编码判断，不查数据库：
-    - model_id 为 None/空 → 返回默认模型
-    - model_id 在 DEPRECATED_MODELS 中 → 返回默认模型，打日志
+    不依赖 .env 配置，防止 .env 中 LLM_MODEL_NAME 本身就是废弃模型导致死循环：
+    - model_id 为 None/空 → 返回硬编码安全模型 gpt-5.6-terra
+    - model_id 在 DEPRECATED_MODELS 中 → 返回硬编码安全模型 gpt-5.6-terra，打日志
+    - .env 中的 LLM_MODEL_NAME 本身是废弃模型 → 也拦截，返回 gpt-5.6-terra
     - 其他情况 → 原样返回（用户自由选择的模型直接放行）
     """
-    default_model = settings.LLM_MODEL_NAME or "gpt-5.6-terra"
+    SAFE_DEFAULT = "gpt-5.6-terra"
 
     if not model_id:
-        return default_model
+        # .env 中的 LLM_MODEL_NAME 如果也是废弃模型，就用硬编码安全值
+        env_model = settings.LLM_MODEL_NAME
+        if env_model and env_model not in settings.DEPRECATED_MODELS:
+            return env_model
+        return SAFE_DEFAULT
 
     if model_id in settings.DEPRECATED_MODELS:
-        logger.warning("[AIService] 拦截废弃模型 %s → %s", model_id, default_model)
-        return default_model
+        logger.warning("[AIService] 拦截废弃模型 %s → %s", model_id, SAFE_DEFAULT)
+        return SAFE_DEFAULT
 
     return model_id
 
