@@ -190,18 +190,11 @@ def _seed_model_configs(db: Session):
         if result.rowcount > 0:
             logger.info("[seed] 强制删除废弃模型: %s (影响 %d 行)", dep_id, result.rowcount)
 
-    # 2. 清理所有不在白名单中的模型（image/video/llm 统一清理）
-    stale = (
-        db.query(ModelConfig)
-        .filter(ModelConfig.model_id.notin_(allowed_ids))
-        .all()
-    )
-    for cfg in stale:
-        db.delete(cfg)
-    if stale:
-        logger.info("[seed] 清理未接入模型 %d 条: %s", len(stale), [c.model_id for c in stale])
+    # 2. 只清理废弃模型（DEPRECATED_MODELS），不清理用户在后台手动添加的模型
+    #    用户添加的任何模型都保留，重启不会被删
+    #    （上面的原生 SQL DELETE 已经做了这一步，这里不再额外清理）
 
-    # 3. 添加缺失的模型配置；已存在的保持原样，避免覆盖用户自定义名称/积分
+    # 3. 添加缺失的内置模型配置；已存在的保持原样，避免覆盖用户自定义名称/积分
     for model_id, name, mtype, description, credits in seeds:
         existing = db.query(ModelConfig).filter(ModelConfig.model_id == model_id).first()
         if not existing:
