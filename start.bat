@@ -51,7 +51,8 @@ if not exist "backend\.env" (
         echo API91_API_KEY=
         echo.
         echo # ========================= Model Config =========================
-        echo LLM_MODEL_NAME=gpt-5.6-terra
+        echo # LLM model names are managed by database + code, NOT .env
+        echo # .env only controls API provider and keys
         echo LLM_PROVIDER=api91
         echo IMAGE_MODEL_GPT_IMAGE_2=gpt-image-2
         echo IMAGE_MODEL_GEMINI_FLASH_IMAGE=gemini-3.1-flash-lite-image

@@ -52,10 +52,12 @@ class Settings(BaseSettings):
         "MODELINK_VIDEO_MODEL_ID", "viduq3-turbo"
     )
 
-    # 默认 LLM 与图片模型
-    LLM_MODEL_NAME: str = os.getenv("LLM_MODEL_NAME", "gpt-5.6-terra")
+    # LLM 模型配置 — 不再从 .env 读取，全部硬编码安全默认值
+    # .env 只负责 API 地址和密钥，模型选择由数据库管理 + 用户前端选择
+    # 如果 .env 中写了旧值，会被忽略（废弃模型会被拦截）
+    LLM_MODEL_NAME: str = "gpt-5.6-terra"
     # LLM 提供商：ark（火山方舟）或 api91（91API）
-    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "ark")
+    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "api91")
     IMAGE_MODEL_GPT_IMAGE_2: str = os.getenv("IMAGE_MODEL_GPT_IMAGE_2", "gpt-image-2")
     IMAGE_MODEL_GEMINI_FLASH_IMAGE: str = os.getenv(
         "IMAGE_MODEL_GEMINI_FLASH_IMAGE", "gemini-3.1-flash-lite-image"
@@ -112,22 +114,18 @@ class Settings(BaseSettings):
     MEMORY_CACHE_TTL: int = int(os.getenv("MEMORY_CACHE_TTL", "1800"))
 
     # ── 废弃模型硬编码列表（一劳永逸拦截） ──────────
-    # 这些模型 ID 无论出现在哪里（旧会话 options、节点 config、前端传参），
-    # 都会在 AIService.chat() 出口处被替换为 LLM_MODEL_NAME。
+    # 这些模型 ID 无论出现在哪里（旧会话 options、节点 config、前端传参、.env），
+    # 都会在 AIService.chat() 出口处被替换为硬编码安全模型 gpt-5.6-terra。
     # 用户可以自由选择数据库中任何已启用的 LLM 模型，只有这个列表中的才会被拦截。
-    # 新增废弃模型时，只需在这里加一行即可。
     DEPRECATED_MODELS: set = {
         "deepseek-v4-flash",
         "doubao-seed-2-1-turbo-260628",
     }
 
-    # ── #6 模型分级策略 ──────────────────────────────
-    # 轻量模型：路由决策、参数提取、简单审核（快速、低成本）
-    LLM_MODEL_LITE: str = os.getenv("LLM_MODEL_LITE", "gpt-5.6-terra")
-    # 标准模型：质检审核、中等复杂度任务
-    LLM_MODEL_STANDARD: str = os.getenv("LLM_MODEL_STANDARD", "gpt-5.6-terra")
-    # 旗舰模型：剧本创作、分镜设计等高复杂度创意任务
-    LLM_MODEL_CREATIVE: str = os.getenv("LLM_MODEL_CREATIVE", "gpt-5.6-terra")
+    # ── 模型分级策略（全部硬编码，不从 .env 读取） ──────
+    LLM_MODEL_LITE: str = "gpt-5.6-terra"
+    LLM_MODEL_STANDARD: str = "gpt-5.6-terra"
+    LLM_MODEL_CREATIVE: str = "gpt-5.6-terra"
 
     # ── #8 动态并发控制 ──────────────────────────────
     # 全局 LLM 并发上限（同时进行的 LLM HTTP 请求）
