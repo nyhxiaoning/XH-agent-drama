@@ -1,6 +1,6 @@
+import hashlib
 import logging
 import mimetypes
-import uuid
 from typing import BinaryIO, Optional, Union
 
 import requests
@@ -91,8 +91,81 @@ def upload_to_cos(
     return url
 
 
+def _cos_object_exists(client: CosS3Client, key: str) -> bool:
+    """检查 COS 上指定 key 的对象是否已存在。"""
+    try:
+        return bool(client.object_exists(
+            Bucket=settings.TENCENT_COS_BUCKET,
+            Key=key,
+        ))
+    except Exception:
+        # object_exists 失败时不阻塞上传流程，保守返回 False
+        return False
+
+
+def _build_dedup_key(prefix: str, content: bytes, ext: str) -> str:
+    """根据内容 MD5 哈希生成去重 COS key。
+
+    相同内容 → 相同 key → 上传前检测到已存在则跳过，节省带宽和存储。
+    """
+    md5 = hashlib.md5(content).hexdigest()
+    return f"{prefix}/{md5}.{ext}"
+
+
+def _build_cos_url(key: str) -> str:
+    """根据 COS key 拼接 HTTPS 公网访问 URL。"""
+    return (
+        f"https://{settings.TENCENT_COS_BUCKET}.cos."
+        f"{settings.TENCENT_COS_REGION}.myqcloud.com/{key}"
+    )
+
+
+def upload_to_cos_dedup(
+    body: bytes,
+    prefix: str,
+    mime_type: str,
+    ext: Optional[str] = None,
+) -> str:
+    """带 MD5 去重的 COS 上传：相同内容只传一次。
+
+    1. 计算内容 MD5 哈希作为 COS key
+    2. 先检查 COS 上是否已存在该 key
+    3. 已存在 → 直接返回 URL，跳过上传
+    4. 不存在 → 上传并返回 URL
+
+    Args:
+        body: 文件二进制内容（必须为 bytes，不支持流）
+        prefix: COS 路径前缀（如 "seedance-ref"）
+        mime_type: MIME 类型
+        ext: 文件扩展名，不传则从 mime_type 推断
+
+    Returns:
+        COS HTTPS 公网访问 URL
+    """
+    if not isinstance(body, (bytes, bytearray)):
+        raise TypeError("upload_to_cos_dedup 仅支持 bytes 类型，请先读取为完整内容")
+
+    body_bytes = bytes(body)
+    if not ext:
+        ext = _ext_for_mime(mime_type)
+
+    key = _build_dedup_key(prefix, body_bytes, ext)
+    client = _get_cos_client()
+
+    # 去重检测：如果 COS 上已存在相同内容，跳过上传
+    if _cos_object_exists(client, key):
+        url = _build_cos_url(key)
+        logger.info("[COS] 去重命中，跳过上传: key=%s size=%d", key, len(body_bytes))
+        return url
+
+    # 不存在则上传
+    url = upload_to_cos(body_bytes, key, mime_type)
+    logger.info("[COS] 去重上传完成: key=%s size=%d", key, len(body_bytes))
+    return url
+
+
 def cache_url_to_cos(url: str, prefix: str = "cache") -> Optional[str]:
-    """从 URL 下载并转存到 COS，已经是 COS 地址则直接返回。"""
+    """从 URL 下载并转存到 COS（带 MD5 去重），已经是 COS 地址则直接返回。"""
     if not url or "myqcloud.com" in url:
         return url
 
@@ -105,7 +178,8 @@ def cache_url_to_cos(url: str, prefix: str = "cache") -> Optional[str]:
     }
 
     try:
-        response = requests.get(url, stream=True, timeout=60, headers=headers)
+        # 统一使用 Buffer 模式下载，以便计算 MD5 进行去重
+        response = requests.get(url, timeout=60, headers=headers)
         response.raise_for_status()
 
         content_type = response.headers.get("content-type") or "application/octet-stream"
@@ -115,34 +189,59 @@ def cache_url_to_cos(url: str, prefix: str = "cache") -> Optional[str]:
             if corrected:
                 content_type = corrected
 
-        content_length_header = response.headers.get("content-length")
-        content_length = (
-            int(content_length_header)
-            if content_length_header and content_length_header.isdigit()
-            else None
-        )
-
-        body_input = response.raw
-        final_length = content_length
-
-        # 缺失 Content-Length 时降级为 Buffer 模式，避免 SDK 流式上传异常
-        if final_length is None:
-            logger.warning("[COS] Missing Content-Length header, falling back to buffering")
-            buffer_response = requests.get(url, timeout=60, headers=headers)
-            buffer_response.raise_for_status()
-            body_input = buffer_response.content
-            final_length = len(body_input)
-            if content_type == "application/octet-stream":
-                ct = buffer_response.headers.get("content-type")
-                if ct:
-                    content_type = ct
-
+        body_bytes = response.content
         ext = _ext_for_mime(content_type)
-        file_name = f"{prefix}/{uuid.uuid4()}.{ext}"
-        cos_url = upload_to_cos(body_input, file_name, content_type, final_length)
+        cos_url = upload_to_cos_dedup(body_bytes, prefix, content_type, ext)
         logger.info("[COS] Successfully cached to: %s", cos_url)
         return cos_url
 
     except Exception as exc:
         logger.error("[COS] Failed to cache URL to COS (%s): %s", url, exc)
         return None
+
+
+def upload_file_to_cos(local_path: str, cos_key: str, mime_type: str) -> str:
+    """使用腾讯云 COS 分片上传本地大文件（适合视频等大文件）。
+
+    Args:
+        local_path: 本地文件绝对路径
+        cos_key: COS 对象路径
+        mime_type: 文件 MIME 类型
+
+    Returns:
+        COS HTTPS 公网访问地址
+    """
+    client = _get_cos_client()
+    if not settings.TENCENT_COS_BUCKET or not settings.TENCENT_COS_REGION:
+        raise RuntimeError("请在 .env 中配置 TENCENT_COS_BUCKET 与 TENCENT_COS_REGION")
+
+    logger.info(
+        "[COS] uploadFileToCos called: local_path=%s cos_key=%s mime=%s bucket=%s",
+        local_path,
+        cos_key,
+        mime_type,
+        settings.TENCENT_COS_BUCKET,
+    )
+
+    try:
+        resp = client.upload_file(
+            Bucket=settings.TENCENT_COS_BUCKET,
+            Key=cos_key,
+            LocalFilePath=local_path,
+            PartSize=10,  # 10MB 每片
+            MAXThread=4,
+            ContentType=mime_type,
+        )
+    except Exception as exc:
+        logger.error("COS Upload File Error: %s", exc)
+        raise RuntimeError(f"COS分片上传失败: {exc}") from exc
+
+    location = resp.get("Location") if isinstance(resp, dict) else None
+    if not location:
+        location = (
+            f"{settings.TENCENT_COS_BUCKET}.cos.{settings.TENCENT_COS_REGION}."
+            f"myqcloud.com/{cos_key}"
+        )
+    url = f"https://{location}"
+    logger.info("[COS] Upload file success: %s", url)
+    return url

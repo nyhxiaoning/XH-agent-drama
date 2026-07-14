@@ -8,6 +8,7 @@ export interface ModelOption {
 // ── 硬编码默认列表（降级回退用） ──
 const _DEFAULT_LLM_MODELS: ModelOption[] = [
   { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra', provider: 'OpenAI', type: 'llm' },
+  { id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna', provider: 'OpenAI', type: 'llm' },
 ];
 
 const _DEFAULT_IMAGE_MODELS: ModelOption[] = [

@@ -71,44 +71,25 @@ class BaseSkill(ABC):
 
     @staticmethod
     def _format_history(history: Optional[List[Dict[str, Any]]]) -> str:
-        """将对话历史格式化为文本块，供拼入 user_content。
+        """[已废弃] 将对话历史格式化为文本块。
 
-        如果没有历史或只有 1 条，返回空字符串（首轮对话不需要上下文）。
-        最多取最近 10 轮（20 条消息），避免 token 爆炸。
+        保留用于向后兼容，但新逻辑通过 llm_json(history=...) 以标准 OpenAI
+        messages 格式传递历史，不再需要文本拼接。
         """
-        if not history or len(history) <= 1:
-            return ""
-        # 取最近的消息，最多 20 条
-        recent = history[-20:]
-        lines: List[str] = ["--- 之前的对话历史（请参考上下文理解当前请求）---"]
-        for msg in recent:
-            role = msg.get("role", "")
-            content = msg.get("content", "")
-            if not content:
-                continue
-            # 截断过长的历史消息（单条最多 2000 字）
-            if len(content) > 2000:
-                content = content[:2000] + "...(内容已截断)"
-            if role == "user":
-                lines.append(f"【用户】{content}")
-            elif role == "assistant":
-                lines.append(f"【AI回复】{content}")
-        lines.append("--- 当前请求 ---")
-        return "\n\n".join(lines) + "\n\n"
+        return ""
 
     @staticmethod
     def _build_user_content_with_history(
         user_input: str,
         history: Optional[List[Dict[str, Any]]],
     ) -> str:
-        """将对话历史拼到 user_input 前面，形成带上下文的 user_content。
+        """[已废弃] 直接返回 user_input，不再将历史拼入文本。
 
-        首轮对话（无历史）时直接返回原 user_input，不影响 LLM 调用。
+        多轮对话历史现在通过 llm_json(history=...) 以标准 OpenAI messages
+        格式注入，LLM 能正确理解 user/assistant 轮次上下文。
+        保留此方法仅为向后兼容，调用方应改为直接传 history 给 llm_json。
         """
-        history_block = BaseSkill._format_history(history)
-        if not history_block:
-            return user_input
-        return f"{history_block}{user_input}"
+        return user_input
 
     def merge_params(self, params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         merged: Dict[str, Any] = {}

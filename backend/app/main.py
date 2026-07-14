@@ -180,6 +180,7 @@ def _seed_model_configs(db: Session):
         ("wan2.7-r2v", "万相 R2V", "video", "阿里云万相参考视频模型", 100),
         ("viduq3-turbo", "Vidu Q3 Turbo", "video", "Modelink Vidu Q3 Turbo 视频生成模型（支持文生/图生/参考生/首尾帧）", 100),
         ("gpt-5.6-terra", "GPT-5.6 Terra", "llm", "OpenAI GPT-5.6 Terra 旗舰大模型", 0),
+        ("gpt-5.6-luna", "GPT-5.6 Luna", "llm", "OpenAI GPT-5.6 Luna 旗舰大模型", 0),
     ]
     allowed_ids = {model_id for model_id, *_ in seeds}
 
@@ -328,22 +329,88 @@ def _auto_create_storyboard_25_nodes(db, source_node, panels: list):
     logger.info("[main] storyboard_25 自动创建 %d 个分镜节点", len(created_ids))
 
 
+def _run_alembic_migrations():
+    """通过 Alembic 执行数据库迁移（替代 Base.metadata.create_all）。
+
+    策略：
+    1. 检测数据库中是否已有业务表但缺少 alembic_version 表
+       → 说明是通过 create_all 创建的旧库，先 stamp head 标记为当前版本
+    2. 正常执行 alembic upgrade head
+       → 新库会执行全部迁移脚本创建表
+       → 已 stamp 的旧库会跳过已应用的迁移
+    """
+    from sqlalchemy import inspect as sa_inspect
+    from alembic.config import Config as AlembicConfig
+    from alembic import command
+    import os as _os
+
+    alembic_ini_path = _os.path.join(
+        _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+        "alembic.ini"
+    )
+    alembic_dir = _os.path.join(
+        _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+        "alembic"
+    )
+
+    alembic_cfg = AlembicConfig(alembic_ini_path)
+    alembic_cfg.set_main_option("script_location", alembic_dir)
+    alembic_cfg.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+
+    inspector = sa_inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+
+    # 检测旧库：有业务表但没有 alembic_version 表
+    has_business_tables = bool(existing_tables & {"users", "canvases", "nodes"})
+    has_alembic_version = "alembic_version" in existing_tables
+
+    if has_business_tables and not has_alembic_version:
+        logger.info("[startup] 检测到已有数据库（通过 create_all 创建），执行 alembic stamp head")
+        try:
+            command.stamp(alembic_cfg, "head")
+            logger.info("[startup] alembic stamp head 完成，已有数据库已标记为最新迁移版本")
+        except Exception as exc:
+            logger.warning("[startup] alembic stamp head 失败（将回退到 create_all）: %s", exc)
+            # 回退：用 create_all 确保表存在
+            Base.metadata.create_all(bind=engine)
+    elif not has_business_tables and not has_alembic_version:
+        # 全新数据库：执行迁移脚本创建所有表
+        logger.info("[startup] 全新数据库，执行 alembic upgrade head 创建表结构")
+        try:
+            command.upgrade(alembic_cfg, "head")
+            logger.info("[startup] alembic upgrade head 完成")
+        except Exception as exc:
+            logger.exception("[startup] alembic upgrade head 失败: %s", exc)
+            raise
+    else:
+        # 已有 alembic_version：正常执行增量迁移
+        logger.info("[startup] 执行 alembic upgrade head（增量迁移）")
+        try:
+            command.upgrade(alembic_cfg, "head")
+            logger.info("[startup] alembic upgrade head 完成")
+        except Exception as exc:
+            logger.exception("[startup] alembic upgrade head 失败: %s", exc)
+            raise
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 建表：如果失败必须立即报错，不能静默跳过
+    # 数据库迁移：通过 Alembic 管理表结构（替代 Base.metadata.create_all）
     try:
-        Base.metadata.create_all(bind=engine)
-        logger.info("[startup] 数据库表创建/检查完成")
+        _run_alembic_migrations()
+        logger.info("[startup] 数据库迁移完成")
     except Exception:
-        logger.exception("[startup] 数据库建表失败！请检查 DATABASE_URL 和 PostgreSQL 权限")
+        logger.exception("[startup] 数据库迁移失败！请检查 DATABASE_URL 和 PostgreSQL 权限")
         raise
 
+    # 兼容性迁移：为旧数据库补齐通过 ALTER TABLE 添加的列
+    # （新库通过 Alembic 初始迁移已包含这些列，以下函数内部有 _column_exists 幂等检查）
     try:
         _migrate_assets_canvas_id()
         _migrate_new_tables()
         _migrate_model_config_tiers()
     except Exception:
-        logger.exception("[startup] 数据库迁移失败")
+        logger.exception("[startup] 兼容性列迁移失败")
         raise
 
     seed_db = SessionLocal()
@@ -456,9 +523,15 @@ async def lifespan(app: FastAPI):
                 NodeStatus.PROCESSING,
                 progress=progress,
             )
+        except Exception as db_exc:
+            logger.error("[on_task_progress] 数据库操作失败 task=%s err=%s", task_id, db_exc)
         finally:
             db.close()
-        await ws_manager.send_task_update(task)
+        # 确保 WebSocket 消息总是发送，即使数据库操作失败
+        try:
+            await ws_manager.send_task_update(task)
+        except Exception as ws_exc:
+            logger.warning("[on_task_progress] WS 消息发送失败 task=%s err=%s", task_id, ws_exc)
 
     ai_worker.set_progress_callback(on_task_progress)
 
@@ -588,9 +661,17 @@ async def lifespan(app: FastAPI):
                         db.rollback()
                         logger.exception("[credit] 取消退款失败 task=%s node=%s", task.id, task.node_id)
                         _persist_failed_refund(task, exc)
+        except Exception as db_exc:
+            # 数据库操作失败不应阻断 WebSocket 消息推送
+            logger.error("[on_task_status_change] 数据库操作失败 task=%s status=%s err=%s", task.id, task.status, db_exc)
         finally:
             db.close()
-        await ws_manager.send_task_update(task)
+        # 确保 WebSocket 消息总是发送，即使数据库操作失败
+        # 否则前端节点会永远卡在 processing 状态，点生图"没反应"
+        try:
+            await ws_manager.send_task_update(task)
+        except Exception as ws_exc:
+            logger.warning("[on_task_status_change] WS 消息发送失败 task=%s err=%s", task.id, ws_exc)
 
     task_manager.on_status_change(on_task_status_change)
     task_manager.set_worker(ai_worker.process)

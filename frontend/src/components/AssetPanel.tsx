@@ -105,6 +105,11 @@ export function AssetPanel() {
     );
   };
 
+  const handleAssetDragStart = (e: React.DragEvent, asset: Asset) => {
+    e.dataTransfer.setData('application/asset', JSON.stringify(asset));
+    e.dataTransfer.effectAllowed = 'copy';
+  };
+
   return (
     <div className="fixed right-4 top-20 bottom-6 w-80 glass rounded-2xl border border-panel-border shadow-soft-lg z-40 flex flex-col">
       <div className="h-12 border-b border-panel-border flex items-center justify-between px-4 shrink-0 bg-panel-bg">
@@ -176,6 +181,8 @@ export function AssetPanel() {
             return (
               <div
                 key={asset.id}
+                draggable
+                onDragStart={(e) => handleAssetDragStart(e, asset)}
                 onClick={() => setSelectedId(asset.id === selectedId ? null : asset.id)}
                 className={`p-3 rounded-xl cursor-pointer transition-all shadow-soft ${
                   selectedId === asset.id
@@ -270,6 +277,8 @@ export function AssetPanel() {
           assets.map((asset) => (
             <div
               key={asset.id}
+              draggable
+              onDragStart={(e) => handleAssetDragStart(e, asset)}
               onClick={() => setSelectedId(asset.id === selectedId ? null : asset.id)}
               className={`p-2.5 rounded-xl cursor-pointer transition-all shadow-soft ${
                 selectedId === asset.id

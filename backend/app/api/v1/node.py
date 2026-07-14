@@ -52,8 +52,26 @@ def collect_storyboard_references(
 
     canvas_nodes = crud_node.get_nodes_by_canvas(db, node.canvas_id)
 
-    # linked_chars/linked_scene 自动关联仅适用于分镜/视频/图片节点
-    if node.node_type in (NodeType.STORYBOARD, NodeType.VIDEO, NodeType.IMAGE):
+    # ── 过滤掉上次生成时持久化到 config 的画布节点结果图 ──
+    # （自动收集的参考图会被写回 reference_images，下次生成时残留为旧数据）
+    # 只保留用户手动上传的参考图（不在画布节点 result_url 中）
+    canvas_result_urls = set()
+    for _n in canvas_nodes:
+        if _n.id != node.id and _is_valid_ref_image(_n.result_url or ""):
+            canvas_result_urls.add(_n.result_url)
+    ref_images = [u for u in ref_images if u not in canvas_result_urls]
+
+    # ── 检查是否有连线（任意类型边指向本节点） ──
+    # 无连线时跳过所有自动关联（linked_chars/linked_scene/prev_storyboard），
+    # 只保留用户手动上传的参考图
+    has_any_edges = db.query(Edge).filter(
+        Edge.target_node_id == node.id,
+    ).count() > 0
+
+    # linked_chars/linked_scene 自动关联仅适用于分镜/视频/图片节点，且需要至少有一条边
+    linked_chars = []
+    linked_scene = None
+    if node.node_type in (NodeType.STORYBOARD, NodeType.VIDEO, NodeType.IMAGE) and has_any_edges:
         linked_chars = node_config.get("linked_char_ids") or (
             [node_config.get("linked_char_id")] if node_config.get("linked_char_id") else []
         )
@@ -98,10 +116,10 @@ def collect_storyboard_references(
             if cfg.get("asset_id") and cfg.get("asset_id") not in ref_asset_ids:
                 ref_asset_ids.append(cfg.get("asset_id"))
 
-    # 前一镜参考图（仅分镜/视频节点适用）
+    # 前一镜参考图（仅分镜/视频节点适用，且需要存在连线）
     prev_sb_ref = None
     prev_sb_id = node_config.get("prev_storyboard_id")
-    if prev_sb_id and node.node_type in (NodeType.STORYBOARD, NodeType.VIDEO):
+    if prev_sb_id and node.node_type in (NodeType.STORYBOARD, NodeType.VIDEO) and has_any_edges:
         for n in canvas_nodes:
             cfg = n.config or {}
             if n.node_type == NodeType.STORYBOARD and cfg.get("storyboard_id") == prev_sb_id:
@@ -365,12 +383,18 @@ async def node_action(
             user_ref_images = list(ref_images)  # collect_storyboard_references 已收集的
             user_ref_asset_ids = list(ref_asset_ids)
 
+            # 无连线时不自动引用分镜结果图作为首帧
+            has_edge_to_video = db.query(Edge).filter(
+                Edge.target_node_id == node.id,
+            ).count() > 0
+
             sb_node = None
-            for n in canvas_nodes:
-                cfg = n.config or {}
-                if n.node_type == NodeType.STORYBOARD and cfg.get("storyboard_id") == sb_id:
-                    sb_node = n
-                    break
+            if has_edge_to_video and sb_id:
+                for n in canvas_nodes:
+                    cfg = n.config or {}
+                    if n.node_type == NodeType.STORYBOARD and cfg.get("storyboard_id") == sb_id:
+                        sb_node = n
+                        break
             # 分镜结果图放首位（作为首帧），已收集的角色/场景参考图和用户上传的参考图追加在后
             final_ref_images = []
             if sb_node and _is_valid_ref_image(sb_node.result_url):
@@ -462,6 +486,10 @@ async def node_action(
                 "generation_params": node_config.get("generation_params"),
             },
         )
+        logger.info(
+            "[node] 提交任务 node=%s type=%s model=%s config_keys=%s",
+            node_id, task_type, node_config.get("model"), list(node_config.keys()),
+        )
         await task_manager.submit(task)
 
         return {
@@ -480,8 +508,11 @@ async def node_action(
             if t.status in (TaskStatus.QUEUED, TaskStatus.RUNNING, TaskStatus.RETRYING, TaskStatus.PENDING):
                 if await task_manager.cancel_task(t.id):
                     cancelled += 1
-        if cancelled > 0 and node.status != NodeStatus.SUCCESS:
+        # 即使没有活跃任务，也要重置卡在 PENDING/PROCESSING 的节点状态
+        # 否则服务重启后任务丢失，节点永远卡住，点生图"没反应"
+        if node.status in (NodeStatus.PENDING, NodeStatus.PROCESSING):
             crud_node.update_node_status(db, node_id, NodeStatus.FAILED, error_msg="用户取消")
+            db.commit()
         return {"cancelled": cancelled, "message": f"已取消 {cancelled} 个任务"}
 
     raise HTTPException(status_code=400, detail=f"不支持的操作: {action.action}")

@@ -7,7 +7,7 @@ import { type GridOverlayMode } from './NodeActionBar';
 import { MaskEditor } from './MaskEditor';
 import { CinematicQuickPanel } from './CinematicQuickPanel';
 import { api } from '@/utils/api';
-import type { CanvasNode, NodeConfig } from '@/types';
+import type { Asset, CanvasNode, NodeConfig } from '@/types';
 
 interface CanvasProps {
   onOpenAgent?: () => void;
@@ -276,6 +276,50 @@ loadRuntimeModels();
     }
   }, [canvas, addNode, getViewportCenter]);
 
+  const createMediaNodeFromAsset = useCallback(async (asset: Asset, x?: number, y?: number) => {
+    if (!canvas) return;
+    setPasting(true);
+    try {
+      const nodeType = asset.asset_type === 'video' ? 'video' : asset.asset_type === 'audio' ? 'audio' : 'image';
+      const pos = x !== undefined && y !== undefined ? { x, y } : getViewportCenter();
+      await addNode(nodeType, pos.x, pos.y);
+      const { canvas: updated } = useEditorStore.getState();
+      const newNode = updated?.nodes[updated.nodes.length - 1];
+      if (newNode) {
+        const mediaUrl = asset.file_url;
+        const thumbUrl = asset.thumbnail_url || mediaUrl;
+        await api.updateNode(newNode.id, {
+          prompt: `${asset.asset_type === 'video' ? '参考视频' : asset.asset_type === 'audio' ? '参考音频' : '参考图片'}：${asset.name}`,
+          result_url: mediaUrl,
+          thumbnail_url: thumbUrl,
+          config: { ...(newNode.config || {}), reference_asset_ids: [asset.id] },
+        });
+        useEditorStore.setState((s) => ({
+          canvas: s.canvas
+            ? {
+                ...s.canvas,
+                nodes: s.canvas.nodes.map((n) =>
+                  n.id === newNode.id
+                    ? {
+                        ...n,
+                        prompt: `${asset.asset_type === 'video' ? '参考视频' : asset.asset_type === 'audio' ? '参考音频' : '参考图片'}：${asset.name}`,
+                        result_url: mediaUrl,
+                        thumbnail_url: thumbUrl,
+                        config: { ...(n.config || {}), reference_asset_ids: [asset.id] },
+                      }
+                    : n
+                ),
+              }
+            : s.canvas,
+        }));
+      }
+    } catch {
+      window.alert('素材拖入失败，请重试');
+    } finally {
+      setPasting(false);
+    }
+  }, [canvas, addNode, getViewportCenter]);
+
   const createScriptNodeFromText = useCallback(async (text: string, x?: number, y?: number) => {
     if (!canvas) return;
     const pos = x !== undefined && y !== undefined ? { x, y } : getViewportCenter();
@@ -301,6 +345,21 @@ loadRuntimeModels();
       const y = (e.clientY - rect.top - offsetRef.current.y) / scaleRef.current - NODE_DEFAULT_HEIGHT / 2;
       addNode(nodeType, x, y);
       return;
+    }
+
+    // 素材库拖放：直接复用已有资产，不再上传
+    const assetJson = e.dataTransfer.getData('application/asset');
+    if (assetJson && canvasRef.current && canvas) {
+      try {
+        const asset = JSON.parse(assetJson) as Asset;
+        const rect = canvasRef.current.getBoundingClientRect();
+        const x = (e.clientX - rect.left - offsetRef.current.x) / scaleRef.current - NODE_DEFAULT_WIDTH / 2;
+        const y = (e.clientY - rect.top - offsetRef.current.y) / scaleRef.current - NODE_DEFAULT_HEIGHT / 2;
+        createMediaNodeFromAsset(asset, x, y);
+        return;
+      } catch {
+        // 解析失败时降级到文件处理
+      }
     }
 
     // 文件 / 文本拖放

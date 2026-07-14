@@ -37,18 +37,63 @@ def _cos_configured() -> bool:
     )
 
 
-def _upload_file_to_cos(content: bytes, cos_key: str, mime_type: str) -> str | None:
-    """上传文件到 COS，成功返回 HTTPS URL，失败返回 None。"""
+async def _upload_file_to_cos(content: bytes, cos_key: str, mime_type: str, max_retries: int = 2) -> str | None:
+    """上传文件到 COS，成功返回 HTTPS URL，失败返回 None。
+
+    在线程池中执行同步 COS SDK 调用，避免阻塞事件循环；支持失败重试。
+    """
     if not _cos_configured():
         return None
-    try:
-        from app.services.cos_service import upload_to_cos
-        cos_url = upload_to_cos(content, cos_key, mime_type, len(content))
-        logger.info("[AIWorker] 已上传至 COS: %s", cos_url)
-        return cos_url
-    except Exception as exc:
-        logger.warning("[AIWorker] COS 上传失败，降级使用本地路径: %s", exc)
+
+    loop = asyncio.get_running_loop()
+    last_err: Optional[Exception] = None
+    for attempt in range(max_retries + 1):
+        try:
+            def _do_upload():
+                from app.services.cos_service import upload_to_cos
+                return upload_to_cos(content, cos_key, mime_type, len(content))
+
+            cos_url = await loop.run_in_executor(None, _do_upload)
+            if cos_url:
+                logger.info("[AIWorker] 已上传至 COS: %s", cos_url)
+                return cos_url
+            logger.warning("[AIWorker] COS 上传返回空（尝试 %d/%d）", attempt + 1, max_retries + 1)
+        except Exception as exc:
+            last_err = exc
+            logger.warning("[AIWorker] COS 上传失败（尝试 %d/%d）: %s", attempt + 1, max_retries + 1, exc)
+            if attempt < max_retries:
+                await asyncio.sleep(2 ** attempt)
+
+    if last_err:
+        logger.warning("[AIWorker] COS 上传失败，降级使用本地路径: %s", last_err)
+    return None
+
+
+async def _upload_video_file_to_cos(file_path: str, cos_key: str, mime_type: str, max_retries: int = 1) -> str | None:
+    """使用 COS 分片上传把本地视频文件上传到云端，适合大文件。
+
+    在线程池中执行同步 SDK 调用，避免阻塞事件循环；支持失败重试。
+    """
+    if not _cos_configured():
         return None
+
+    loop = asyncio.get_running_loop()
+    for attempt in range(max_retries + 1):
+        try:
+            def _do_upload():
+                from app.services.cos_service import upload_file_to_cos
+                return upload_file_to_cos(file_path, cos_key, mime_type)
+
+            cos_url = await loop.run_in_executor(None, _do_upload)
+            if cos_url:
+                logger.info("[AIWorker] 视频已分片上传至 COS: %s", cos_url)
+                return cos_url
+            logger.warning("[AIWorker] 视频分片上传返回空（尝试 %d/%d）", attempt + 1, max_retries + 1)
+        except Exception as exc:
+            logger.warning("[AIWorker] 视频分片上传失败（尝试 %d/%d）: %s", attempt + 1, max_retries + 1, exc)
+            if attempt < max_retries:
+                await asyncio.sleep(2 ** attempt)
+    return None
 
 
 def _has_real_key(key: str) -> bool:
@@ -129,9 +174,25 @@ class AIWorker:
         """Mock 模式已禁用：直接报错，避免返回不存在的 URL 导致 404。"""
         model = task.params.get("model") or "unknown"
         logger.error("[AIWorker] 视频生成 Mock 模式已禁用 task=%s model=%s（API Key 未配置）", task.id, model)
+
+        # 生成具体的缺失 key 提示
+        _modelink_models = {"viduq3-turbo", "vidu-q3-turbo", settings.MODELINK_VIDEO_MODEL_ID.lower()}
+        if model in _modelink_models:
+            missing_key = "MODELINK_API_KEY"
+        elif model.startswith("doubao-seedance"):
+            missing_key = "VOLCENGINE_ARK_API_KEY"
+        elif "wan" in model:
+            missing_key = "DASHSCOPE_API_KEY"
+        else:
+            missing_key = "MODELINK_API_KEY / DASHSCOPE_API_KEY / VOLCENGINE_ARK_API_KEY"
+
         raise RuntimeError(
-            f"视频模型 {model} 的 API Key 未配置，无法生成视频。"
-            "请在 .env 中配置对应的 API Key（如 MODELINK_API_KEY / DASHSCOPE_API_KEY / VOLCENGINE_ARK_API_KEY）。"
+            f"视频模型 {model} 的 API Key 未配置（{missing_key} 为空），无法生成视频。\n"
+            f"请检查：\n"
+            f"  1. 确认 /opt/xiaoyunque/shared/.env 中 {missing_key}=你的密钥\n"
+            f"  2. 修改后重启服务：systemctl restart xiaoyunque@8001（或当前端口）\n"
+            f"  3. 访问 /api/v1/debug/video-config 确认 Key 是否已加载\n"
+            f"  4. 注意 .env 不能有 CRLF 换行符（Windows 换行），需为 Unix LF 格式"
         )
 
     async def _generate_script_mock(self, task: Task) -> Dict[str, Any]:
@@ -204,7 +265,7 @@ class AIWorker:
 
         # 配置了 COS 时上传到云存储，返回公网 HTTPS URL
         mime_type = "image/png" if ext == ".png" else "image/jpeg" if ext == ".jpg" else "image/webp" if ext == ".webp" else "image/png"
-        cos_url = _upload_file_to_cos(content, f"uploads/generated/{filename}", mime_type)
+        cos_url = await _upload_file_to_cos(content, f"uploads/generated/{filename}", mime_type)
         if cos_url:
             return cos_url
 
@@ -368,10 +429,11 @@ class AIWorker:
             "images": images,
         }
 
-    async def _save_video_result(self, task_id: str, raw_url: str) -> str:
+    async def _save_video_result(self, task: Task, raw_url: str) -> str:
         """把 AI 返回的视频下载保存到 uploads/videos，返回可访问的 /static 路径。
 
         火山方舟/万相返回的视频 URL 是临时的（通常 24h 过期），必须下载到本地持久化。
+        大文件使用 COS 分片上传，避免单对象上传超时。
         """
         save_dir = os.path.join(UPLOAD_DIR, "videos")
         os.makedirs(save_dir, exist_ok=True)
@@ -382,7 +444,8 @@ class AIWorker:
 
         if raw_url.startswith("http://") or raw_url.startswith("https://"):
             async with httpx.AsyncClient() as client:
-                resp = await client.get(raw_url, timeout=300)
+                # 大视频下载可能超过 5 分钟，放宽到 15 分钟
+                resp = await client.get(raw_url, timeout=900)
                 resp.raise_for_status()
                 content = resp.content
                 ctype = resp.headers.get("content-type", "").lower()
@@ -397,12 +460,25 @@ class AIWorker:
         file_path = os.path.join(save_dir, filename)
         with open(file_path, "wb") as f:
             f.write(content)
-        logger.info("[AIWorker] 视频已保存 task=%s path=%s size=%d", task_id, file_path, len(content))
+        logger.info("[AIWorker] 视频已保存 task=%s path=%s size=%d", task.id, file_path, len(content))
+
+        # 下载完成后向前端报告真实进度
+        task.progress = 96
+        await self._report_progress(task.id, 96)
 
         # 配置了 COS 时上传到云存储，返回公网 HTTPS URL
         mime_type = "video/mp4" if ext == ".mp4" else "video/webm" if ext == ".webm" else "video/quicktime" if ext == ".mov" else "video/mp4"
-        cos_url = _upload_file_to_cos(content, f"uploads/videos/{filename}", mime_type)
+        cos_key = f"uploads/videos/{filename}"
+        cos_url: str | None = None
+        # 大于 20MB 的视频使用分片上传，避免单对象上传超时
+        if len(content) > 20 * 1024 * 1024:
+            cos_url = await _upload_video_file_to_cos(file_path, cos_key, mime_type)
+        else:
+            cos_url = await _upload_file_to_cos(content, cos_key, mime_type)
+
         if cos_url:
+            task.progress = 98
+            await self._report_progress(task.id, 98)
             return cos_url
 
         return f"/static/videos/{filename}"
@@ -431,7 +507,7 @@ class AIWorker:
             await self._report_progress(task.id, 90)
             # 下载到本地持久化，避免远程 URL 过期
             try:
-                local_url = await self._save_video_result(task.id, video_url)
+                local_url = await self._save_video_result(task, video_url)
             except Exception as exc:
                 logger.warning("[AIWorker] 视频下载失败，使用远程 URL task=%s err=%s", task.id, exc)
                 local_url = video_url
@@ -445,7 +521,7 @@ class AIWorker:
                 "raw_response": result,
             }
 
-        # 有 taskId 需要轮询任务状态直到完成或超时（最多 15 分钟）
+        # 有 taskId 需要轮询任务状态直到完成或超时（Modelink 最多 30 分钟，其他 15 分钟）
         if not video_task_id:
             raise RuntimeError("视频生成未返回 taskId 也未返回 url")
 
@@ -453,13 +529,14 @@ class AIWorker:
         # 暂存外部 video_task_id 到 params，供 /api/ark/callback 回调查找使用
         task.params["_video_task_id"] = video_task_id
         # Modelink 需要暂存 response_url 用于轮询
-        is_modelink = model.lower() in {"viduq3-turbo", "vidu-q3-turbo"}
+        is_modelink = model.lower() in {"viduq3-turbo", "vidu-q3-turbo", settings.MODELINK_VIDEO_MODEL_ID.lower()}
         response_url = result.get("response_url", "") if is_modelink else ""
         if response_url:
             task.params["_response_url"] = response_url
             logger.info("[AIWorker] Modelink response_url=%s", response_url)
-        # 超时从 5 分钟提升到 15 分钟（Seedance 2.0 生成 10s/15s 视频通常需要 5-10 分钟）
-        poll_timeout = 900
+        # Vidu Q3 Turbo / Seedance 2.0 高分辨率/长时长生成可能需要更久，给予 30 分钟；其他模型保持 15 分钟
+        is_long_poll = is_modelink or model.lower().startswith("doubao-seedance-2-0")
+        poll_timeout = 1800 if is_long_poll else 900
         deadline = time.monotonic() + poll_timeout
         poll_interval = 10
         last_status = None
@@ -484,7 +561,7 @@ class AIWorker:
                     task.progress = 95
                     await self._report_progress(task.id, 95)
                     try:
-                        local_url = await self._save_video_result(task.id, cb_url)
+                        local_url = await self._save_video_result(task, cb_url)
                     except Exception as exc:
                         logger.warning("[AIWorker] 视频下载失败，使用远程 URL task=%s err=%s", task.id, exc)
                         local_url = cb_url
@@ -532,7 +609,7 @@ class AIWorker:
                 await self._report_progress(task.id, 95)
                 # 下载到本地持久化，避免火山方舟临时 URL 过期
                 try:
-                    local_url = await self._save_video_result(task.id, url)
+                    local_url = await self._save_video_result(task, url)
                 except Exception as exc:
                     logger.warning("[AIWorker] 视频下载失败，使用远程 URL task=%s err=%s", task.id, exc)
                     local_url = url
@@ -720,7 +797,12 @@ class AIWorker:
 
     async def process(self, task: Task) -> Dict[str, Any]:
         task_type = task.task_type
-        logger.info("[AIWorker] 领取任务 task=%s type=%s node=%s", task.id, task_type, task.node_id)
+        logger.info(
+            "[AIWorker] 领取任务 task=%s type=%s node=%s model=%s params_keys=%s",
+            task.id, task_type, task.node_id,
+            task.params.get("model"),
+            list(task.params.keys()),
+        )
 
         if task_type == "generate_image":
             count = task.params.get("count", 1)
@@ -745,10 +827,12 @@ class AIWorker:
 
         elif task_type == "generate_video":
             model = (task.params.get("model") or "wan2.7-video").lower()
+            # 与 ai_service.py generate_video() 的路由判断保持一致
+            _modelink_models = {"viduq3-turbo", "vidu-q3-turbo", settings.MODELINK_VIDEO_MODEL_ID.lower()}
             provider_ready = (
                 (model.startswith("doubao-seedance") and _has_real_key(settings.VOLCENGINE_ARK_API_KEY))
                 or ("wan" in model and _has_real_key(settings.DASHSCOPE_API_KEY))
-                or (model in {"viduq3-turbo", "vidu-q3-turbo"} and _has_real_key(settings.MODELINK_API_KEY))
+                or (model in _modelink_models and _has_real_key(settings.MODELINK_API_KEY))
             )
             logger.info("[AIWorker] 视频生成 task=%s model=%s provider_ready=%s", task.id, model, provider_ready)
             if provider_ready:

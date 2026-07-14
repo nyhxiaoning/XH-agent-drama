@@ -95,13 +95,11 @@ class StoryCreationSkill(BaseSkill):
 核心卖点：{merged.get('核心卖点')}
 """.strip()
 
-        # 注入多轮对话历史上下文
-        user_content = self._build_user_content_with_history(user_content, history)
-
         result = await llm_json(
             system_prompt,
             user_content,
     model=self._llm_model,
+            history=history,
             max_tokens=16384,
             temperature=0.3,
             fallback={

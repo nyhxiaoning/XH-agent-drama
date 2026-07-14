@@ -319,15 +319,21 @@ async def llm_json(
     cache_key_suffix: Optional[str] = None,
     max_tokens: Optional[int] = None,
     temperature: float = 0.3,
+    history: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     调用 LLM 并解析 JSON；内置缓存、重试、token 计量。
 
     token_tracker: 调用方传入的可变 dict，会累计 token_used。
+    history: 多轮对话历史 [{"role": "user"|"assistant", "content": "..."}, ...]，
+            以标准 OpenAI messages 格式注入，让 LLM 正确理解上下文。
     """
     cache_key = _make_cache_key(system_prompt, user_content, model)
     if cache_key_suffix:
         cache_key = f"{cache_key}::{cache_key_suffix}"
+    # 有历史对话时不使用缓存（每次上下文不同）
+    if history:
+        enable_cache = False
 
     if enable_cache:
         cached = _llm_cache.get(cache_key)
@@ -335,17 +341,29 @@ async def llm_json(
             logger.info("[LLMClient] cache hit %s...", cache_key[:8])
             return cached
 
+    # 构造标准 OpenAI 多轮消息：system + 历史轮次 + 当前 user
     messages: List[Dict[str, str]] = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_content},
     ]
+    if history:
+        # 取最近 20 条，避免 token 爆炸
+        for msg in history[-20:]:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            if role in ("user", "assistant") and content:
+                # 截断过长的历史消息（单条最多 2000 字）
+                if len(content) > 2000:
+                    content = content[:2000] + "...(内容已截断)"
+                messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": user_content})
 
     # 诊断日志：记录 LLM 调用前的关键信息
     prompt_preview = (system_prompt[:80] + "...") if len(system_prompt) > 80 else system_prompt
     user_preview = (user_content[:80] + "...") if len(user_content) > 80 else user_content
     logger.info(
-        "[LLMClient] 开始调用 LLM: model=%s max_tokens=%s temp=%.1f retries=%d prompt_len=%d user_len=%d",
+        "[LLMClient] 开始调用 LLM: model=%s max_tokens=%s temp=%.1f retries=%d prompt_len=%d user_len=%d history=%d msgs=%d",
         model, max_tokens, temperature, max_retries, len(system_prompt), len(user_content),
+        len(history) if history else 0, len(messages),
     )
     logger.debug("[LLMClient] system_prompt preview: %s", prompt_preview)
     logger.debug("[LLMClient] user_content preview: %s", user_preview)

@@ -113,8 +113,7 @@ async def _to_public_cos_url(url: str, prefix: str = "seedance-ref") -> str:
 
     import asyncio
     import mimetypes
-    import uuid
-    from app.services.cos_service import upload_to_cos
+    from app.services.cos_service import upload_to_cos_dedup
 
     loop = asyncio.get_event_loop()
 
@@ -132,14 +131,14 @@ async def _to_public_cos_url(url: str, prefix: str = "seedance-ref") -> str:
         try:
             ext = os.path.splitext(local_disk_path)[1].lstrip(".") or "png"
             mime = mimetypes.guess_type(local_disk_path)[0] or "image/png"
-            file_name = f"{prefix}/{uuid.uuid4()}.{ext}"
 
-            def _read_and_upload():
+            def _read_and_upload_dedup():
                 with open(local_disk_path, "rb") as f:
-                    return upload_to_cos(f, file_name, mime)
-            cos_url = await loop.run_in_executor(None, _read_and_upload)
+                    content = f.read()
+                return upload_to_cos_dedup(content, prefix, mime, ext)
+            cos_url = await loop.run_in_executor(None, _read_and_upload_dedup)
             if cos_url:
-                logger.info("[AIService] 参考图直传 COS 成功: %s -> %s", url, cos_url)
+                logger.info("[AIService] 参考图直传 COS 成功（MD5去重）: %s -> %s", url, cos_url)
                 return cos_url
             logger.warning("[AIService] 参考图直传 COS 返回空，回退到绝对地址: %s", url)
         except Exception as exc:
@@ -354,7 +353,7 @@ class AIService:
             raise ValueError(f"不支持的 API 类型: {api_type}")
 
         url = _join_url(base_url, endpoint)
-        headers: Dict[str, str] = {"Content-Type": "application/json"}
+        headers: Dict[str, str] = {"Content-Type": "application/json", "Accept": "application/json"}
         if api_type == "dashscope":
             headers["Authorization"] = f"Bearer {api_key}"
             if "video-synthesis" in endpoint:
@@ -639,6 +638,11 @@ class AIService:
         if "seedream" in normalized:
             return await AIService._generate_image_ark(prompt, model, options)
 
+        # Gemini 系列走专用通道（yunwu.ai 不支持 /v1/images/generations 端点调用 Gemini）
+        # 需要走 Gemini 原生 generateContent 端点或 chat/completions
+        if "gemini" in normalized:
+            return await AIService._generate_image_gemini(prompt, model, options)
+
         known_models = {
             settings.IMAGE_MODEL_GPT_IMAGE_2.lower(),
             settings.IMAGE_MODEL_GEMINI_FLASH_IMAGE.lower(),
@@ -647,6 +651,7 @@ class AIService:
         if normalized not in known_models and not normalized.endswith("-91api"):
             raise ValueError(f"不支持的图像模型: {model}")
 
+        # GPT Image 等非 Gemini 模型走 91API /v1/images/generations 端点
         return await AIService._generate_image_91api(prompt, model, options)
 
     @staticmethod
@@ -999,8 +1004,8 @@ class AIService:
     async def _generate_image_91api(prompt: str, model: str, options: Dict[str, Any]) -> Any:
         """91API 生图入口。
 
-        所有模型统一走 OpenAI 兼容 /v1/images/generations + /v1/images/edits 端点。
-        yunwu.ai 不支持 Gemini 原生 /v1beta 路径（返回 HTML），统一走图片端点。
+        仅处理 GPT Image 等非 Gemini 模型，走 OpenAI 兼容 /v1/images/generations + /v1/images/edits 端点。
+        Gemini 模型由 _generate_image_gemini() 单独处理（yunwu.ai 不支持 /v1/images/generations 调 Gemini）。
         """
         normalized = model.lower()
         is_91api = normalized.endswith("-91api")
@@ -1258,7 +1263,7 @@ class AIService:
         payload: Dict[str, Any] = {
             "model": ark_model_id,
             "content": content,
-            "generate_audio": bool(options.get("sound")),
+            "generate_audio": bool(options.get("sound", True)),
             "ratio": ratio,
             "duration": duration,
             "watermark": bool(options.get("watermark")),
@@ -1549,12 +1554,13 @@ class AIService:
             if "|" in task_id:
                 _real_id, response_url = task_id.split("|", 1)
             else:
+                # fallback：根据 API 文档，response_url 格式为 /queue/fal-ai/vidu/requests/{task_id}
                 response_url = _join_url(
                     settings.MODELINK_API_BASE_URL,
-                    f"/queue/fal-ai/vidu/q3/text-to-video/turbo/requests/{task_id}",
+                    f"/queue/fal-ai/vidu/requests/{task_id}",
                 )
 
-            headers = {"Authorization": f"Bearer {settings.MODELINK_API_KEY}"}
+            headers = {"Authorization": f"Bearer {settings.MODELINK_API_KEY}", "Accept": "application/json"}
             try:
                 async with httpx.AsyncClient() as client:
                     resp = await client.get(response_url, headers=headers, timeout=120)

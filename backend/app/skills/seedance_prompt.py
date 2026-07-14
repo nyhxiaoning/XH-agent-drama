@@ -177,12 +177,11 @@ class SeedancePromptSkill(BaseSkill):
             user_content += "\n已有素材：无（纯文本提示词）\n"
 
         # 注入多轮对话历史上下文
-        user_content = self._build_user_content_with_history(user_content, history)
-
         result = await llm_json(
             system_prompt,
             user_content,
     model=self._llm_model,
+            history=history,
             max_tokens=8192,
             temperature=0.5,
             fallback={

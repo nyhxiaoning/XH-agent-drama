@@ -11,7 +11,7 @@ import asyncio
 import inspect
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from app.services.llm_client import llm_json as _llm_json_client, check_token_budget
 from app.core.model_tiers import TaskTier, resolve_model, resolve_model_for_agent
@@ -34,6 +34,7 @@ def _get_semaphore() -> asyncio.Semaphore:
 _client_params = set(inspect.signature(_llm_json_client).parameters.keys())
 _CLIENT_SUPPORTS_MAX_TOKENS = "max_tokens" in _client_params
 _CLIENT_SUPPORTS_TEMPERATURE = "temperature" in _client_params
+_CLIENT_SUPPORTS_HISTORY = "history" in _client_params
 if not _CLIENT_SUPPORTS_MAX_TOKENS:
     logger.warning("[llm_utils] llm_client.llm_json 不支持 max_tokens 参数，将降级忽略")
 
@@ -48,6 +49,7 @@ async def llm_json(
     temperature: float = 0.3,
     tier: Optional[TaskTier] = None,
     agent_name: Optional[str] = None,
+    history: Optional[List[Dict[str, Any]]] = None,
     **kwargs,
 ) -> Dict[str, Any]:
     """
@@ -84,6 +86,9 @@ async def llm_json(
         call_kwargs["max_tokens"] = max_tokens
     if _CLIENT_SUPPORTS_TEMPERATURE:
         call_kwargs["temperature"] = temperature
+    # 传递多轮对话历史
+    if history and _CLIENT_SUPPORTS_HISTORY:
+        call_kwargs["history"] = history
     call_kwargs.update(kwargs)
 
     # #8 动态并发控制：通过信号量限制同时进行的 LLM 请求
@@ -159,6 +164,7 @@ async def llm_json_stream(
     tier: Optional[TaskTier] = None,
     agent_name: Optional[str] = None,
     on_token: Optional[Any] = None,
+    history: Optional[List[Dict[str, Any]]] = None,
     **kwargs,
 ) -> Dict[str, Any]:
     """#16 流式 LLM JSON 调用：逐 token 推送到前端，最终返回解析后的 JSON。
@@ -181,8 +187,16 @@ async def llm_json_stream(
 
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_content},
     ]
+    if history:
+        for msg in history[-20:]:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            if role in ("user", "assistant") and content:
+                if len(content) > 2000:
+                    content = content[:2000] + "...(内容已截断)"
+                messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": user_content})
 
     # #8 并发控制
     sem = _get_semaphore()

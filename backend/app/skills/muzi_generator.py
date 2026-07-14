@@ -5,7 +5,7 @@ Skill: muzi-3d-generator
 
 基于 skill技能/muzi-01-1.0.0/SKILL.md 实现。
 """
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from app.agents.llm_utils import llm_json
 from app.skills.base import BaseSkill, SkillInfo, SkillOutput, SkillParam
@@ -212,6 +212,7 @@ class MuziGeneratorSkill(BaseSkill):
         user_input: str,
         params: Optional[Dict[str, Any]] = None,
         global_params: Optional[Dict[str, Any]] = None,
+        history: Optional[List[Dict[str, Any]]] = None,
     ) -> SkillOutput:
         merged = self.merge_params(params)
         system_prompt = self._render_global_params(self.system_prompt, global_params)
@@ -235,6 +236,7 @@ class MuziGeneratorSkill(BaseSkill):
             system_prompt,
             user_content,
     model=self._llm_model,
+            history=history,
             max_tokens=16384,
             temperature=0.4,
             fallback={

@@ -479,8 +479,8 @@ export function SkillChat({ skill, page }: SkillChatProps) {
     setLoading(true);
     setProgressText('智能分析您的需求...');
 
-    // 保存用户消息
-    if (convId) saveMessage(convId, 'user', text);
+    // 保存用户消息（必须 await，确保后端加载历史时能读到当前消息）
+    if (convId) await saveMessage(convId, 'user', text);
 
     const progressId = `p-${Date.now()}`;
     setMessages((prev) => [...prev, {

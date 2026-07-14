@@ -91,12 +91,11 @@ class SceneDesignSkill(BaseSkill):
 """.strip()
 
         # 注入多轮对话历史上下文
-        user_content = self._build_user_content_with_history(user_content, history)
-
         result = await llm_json(
             system_prompt,
             user_content,
     model=self._llm_model,
+            history=history,
             max_tokens=4096,
             temperature=0.3,
             fallback={

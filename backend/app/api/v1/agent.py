@@ -809,6 +809,10 @@ async def short_drama_generate_all(req: ShortDramaGenerateAllReq, db: Session = 
             user_id=str(current_user.id),
             cost=cost,
         )
+        logger.info(
+            "[generate_all] 提交任务 node=%s type=%s model=%s",
+            n.id, task_type, node_config.get("model"),
+        )
         tasks_to_submit.append(task)
 
     # 确保第二阶段对 node.config 的修改被 flush 到数据库（即使 total_cost==0 也不丢失）

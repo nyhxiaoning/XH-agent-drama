@@ -22,15 +22,12 @@ class Settings(BaseSettings):
     TENCENT_COS_REGION: str = os.getenv("TENCENT_COS_REGION", "")
 
     # 阿里云百炼（DashScope）配置
-    DASHSCOPE_API_BASE_URL: str = os.getenv(
-        "DASHSCOPE_API_BASE_URL", "https://dashscope.aliyuncs.com/api/v1"
-    )
+    # 注意：使用 `or` 而非 os.getenv 默认值，防止 .env 中空字符串覆盖默认值
+    DASHSCOPE_API_BASE_URL: str = os.getenv("DASHSCOPE_API_BASE_URL") or "https://dashscope.aliyuncs.com/api/v1"
     DASHSCOPE_API_KEY: str = os.getenv("DASHSCOPE_API_KEY", "")
 
     # 火山引擎 Ark 配置
-    VOLCENGINE_ARK_API_BASE_URL: str = os.getenv(
-        "VOLCENGINE_ARK_API_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"
-    )
+    VOLCENGINE_ARK_API_BASE_URL: str = os.getenv("VOLCENGINE_ARK_API_BASE_URL") or "https://ark.cn-beijing.volces.com/api/v3"
     VOLCENGINE_ARK_API_KEY: str = os.getenv("VOLCENGINE_ARK_API_KEY", "")
     VOLCENGINE_ARK_MODEL_ID_STANDARD: str = os.getenv(
         "VOLCENGINE_ARK_MODEL_ID_STANDARD", "doubao-seedance-2-0-260128"
@@ -40,17 +37,13 @@ class Settings(BaseSettings):
     )
 
     # 91API 配置（gpt-image-2 / gemini 图片通道）
-    API91_BASE_URL: str = os.getenv("API91_BASE_URL", "https://api.91api.com")
+    API91_BASE_URL: str = os.getenv("API91_BASE_URL") or "https://yunwu.ai"
     API91_API_KEY: str = os.getenv("API91_API_KEY", "")
 
     # Modelink 配置（Vidu Q3 Turbo 等视频模型）
-    MODELINK_API_BASE_URL: str = os.getenv(
-        "MODELINK_API_BASE_URL", "https://api.qnaigc.com"
-    )
+    MODELINK_API_BASE_URL: str = os.getenv("MODELINK_API_BASE_URL") or "https://api.qnaigc.com"
     MODELINK_API_KEY: str = os.getenv("MODELINK_API_KEY", "")
-    MODELINK_VIDEO_MODEL_ID: str = os.getenv(
-        "MODELINK_VIDEO_MODEL_ID", "viduq3-turbo"
-    )
+    MODELINK_VIDEO_MODEL_ID: str = os.getenv("MODELINK_VIDEO_MODEL_ID") or "viduq3-turbo"
 
     # LLM 模型配置 — 不再从 .env 读取，全部硬编码安全默认值
     # .env 只负责 API 地址和密钥，模型选择由数据库管理 + 用户前端选择
@@ -58,17 +51,13 @@ class Settings(BaseSettings):
     LLM_MODEL_NAME: str = "gpt-5.6-terra"
     # LLM 提供商：ark（火山方舟）或 api91（91API）
     LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "api91")
-    IMAGE_MODEL_GPT_IMAGE_2: str = os.getenv("IMAGE_MODEL_GPT_IMAGE_2", "gpt-image-2")
-    IMAGE_MODEL_GEMINI_FLASH_IMAGE: str = os.getenv(
-        "IMAGE_MODEL_GEMINI_FLASH_IMAGE", "gemini-3.1-flash-lite-image"
-    )
+    IMAGE_MODEL_GPT_IMAGE_2: str = os.getenv("IMAGE_MODEL_GPT_IMAGE_2") or "gpt-image-2"
+    IMAGE_MODEL_GEMINI_FLASH_IMAGE: str = os.getenv("IMAGE_MODEL_GEMINI_FLASH_IMAGE") or "gemini-3.1-flash-lite-image"
     # 豆包 Seedream 文生图模型（火山方舟 Ark API /api/v3/images/generations）
-    IMAGE_MODEL_DOUBAO_SEEDREAM: str = os.getenv(
-        "IMAGE_MODEL_DOUBAO_SEEDREAM", "doubao-seedream-5-0-pro-260628"
-    )
+    IMAGE_MODEL_DOUBAO_SEEDREAM: str = os.getenv("IMAGE_MODEL_DOUBAO_SEEDREAM") or "doubao-seedream-5-0-pro-260628"
 
     # 服务公网地址，用于把 /uploads 本地相对地址转成绝对 URL
-    PUBLIC_BASE_URL: str = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000")
+    PUBLIC_BASE_URL: str = os.getenv("PUBLIC_BASE_URL") or "http://localhost:8000"
 
     # 支付配置
     ALIPAY_APP_ID: str = os.getenv("ALIPAY_APP_ID", "")
