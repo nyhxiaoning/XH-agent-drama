@@ -7,7 +7,6 @@
  */
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAuthStore } from '@/store/auth';
-import type { WSMessage } from '@/types';
 
 export interface TaskUpdate {
   type: string;
