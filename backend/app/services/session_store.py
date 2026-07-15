@@ -32,6 +32,7 @@ class SessionStore(ABC):
         prompt: str,
         mode: str = "inspiration",
         user_id: Optional[str] = None,
+        team_id: Optional[str] = None,
         initial_data: Optional[Dict[str, Any]] = None,
     ) -> str:
         """创建会话，返回 session_id。"""
@@ -80,6 +81,7 @@ class InMemorySessionStore(SessionStore):
         prompt: str,
         mode: str = "inspiration",
         user_id: Optional[str] = None,
+        team_id: Optional[str] = None,
         initial_data: Optional[Dict[str, Any]] = None,
     ) -> str:
         sid = hashlib.sha256(f"{datetime.utcnow().isoformat()}-{uuid.uuid4()}".encode()).hexdigest()[:16]
@@ -90,6 +92,7 @@ class InMemorySessionStore(SessionStore):
             "mode": mode,
             "status": "planning",
             "user_id": user_id,
+            "team_id": team_id,
         })
         data.setdefault("messages", [])
         data.setdefault("options", {})
@@ -155,6 +158,7 @@ class SQLitePersistentSessionStore(SessionStore):
         prompt: str,
         mode: str = "inspiration",
         user_id: Optional[str] = None,
+        team_id: Optional[str] = None,
         initial_data: Optional[Dict[str, Any]] = None,
     ) -> str:
         sid = hashlib.sha256(f"{datetime.utcnow().isoformat()}-{uuid.uuid4()}".encode()).hexdigest()[:16]
@@ -165,6 +169,7 @@ class SQLitePersistentSessionStore(SessionStore):
             "mode": mode,
             "status": "planning",
             "user_id": user_id,
+            "team_id": team_id,
         })
         db = self._session()
         try:

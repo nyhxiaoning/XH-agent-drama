@@ -97,6 +97,7 @@ def build_canvas_from_session(
     base_x: int = 100,
     base_y: int = 150,
     user_id: str = None,
+    team_id: str = None,
 ) -> Dict[str, Any]:
     """
     创建画布结构（节点 + 连线）。
@@ -150,8 +151,10 @@ def build_canvas_from_session(
             name=project_title + "的创作画布",
             description=(script.get("source_prompt", "") or "")[:200],
         )
-        extra = {"user_id": str(user_id)} if user_id else None
-        canvas = crud_canvas.create_canvas(db, canvas_in, commit=False, extra_data=extra)
+        extra = {"user_id": str(user_id)} if user_id else {}
+        if team_id:
+            extra["team_id"] = team_id
+        canvas = crud_canvas.create_canvas(db, canvas_in, commit=False, extra_data=extra if extra else None)
 
     # 将锁定资产关联到画布
     for aid in asset_ids:

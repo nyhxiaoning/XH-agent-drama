@@ -232,12 +232,12 @@ def _try_save_asset(db, node, result_url: str, thumbnail_url: str | None, result
         if existing:
             return
 
-        # user_id 优先用传入的，否则从画布上获取
-        if not user_id:
-            from app.models.canvas import Canvas
-            canvas = db.query(Canvas).filter(Canvas.id == node.canvas_id).first()
-            if canvas and canvas.user_id:
-                user_id = canvas.user_id
+        # 从画布获取 user_id 和 team_id（确保团队画布的资产继承 team_id）
+        from app.models.canvas import Canvas
+        canvas = db.query(Canvas).filter(Canvas.id == node.canvas_id).first()
+        if not user_id and canvas and canvas.user_id:
+            user_id = canvas.user_id
+        team_id = canvas.team_id if canvas else None
 
         asset_type = _NODE_TYPE_TO_ASSET_TYPE.get(node.node_type, AssetType.IMAGE)
         cfg = node.config or {}
@@ -258,6 +258,7 @@ def _try_save_asset(db, node, result_url: str, thumbnail_url: str | None, result
             thumbnail_url=thumbnail_url or result_url,
             canvas_id=node.canvas_id,
             user_id=user_id,
+            team_id=team_id,
             tags=[node.node_type.value, "ai-generated"],
             description=node.prompt or "",
             meta=meta,

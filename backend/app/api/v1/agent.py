@@ -123,6 +123,7 @@ class ShortDramaStartReq(BaseModel):
     mode: str = "inspiration"  # inspiration | script | novel
     script_text: Optional[str] = None  # 剧本模式下用户上传/粘贴的剧本文本；novel 模式下为小说原文
     llm_model: Optional[str] = None  # 用户选择的语言大模型
+    team_id: Optional[str] = None  # 团队 ID（可选，关联团队则资产/画布共享给团队成员）
 
 
 class ShortDramaStepReq(BaseModel):
@@ -236,6 +237,7 @@ async def short_drama_start(req: ShortDramaStartReq, current_user: User = Depend
         script_text=req.script_text,
         user_id=str(current_user.id),
         llm_model=req.llm_model,
+        team_id=req.team_id,
     )
     return {"status": "success", "session_id": sid, "session": _serialize_session(short_drama_workflow.get_session(sid))}
 
@@ -334,6 +336,7 @@ class OneClickStartReq(BaseModel):
     mode: str = "inspiration"
     script_text: Optional[str] = None  # 剧本模式或小说模式下的原文文本
     llm_model: Optional[str] = None
+    team_id: Optional[str] = None  # 团队 ID（可选）
 
 
 @router.post("/short-drama/one-click")
@@ -350,6 +353,7 @@ async def short_drama_one_click(req: OneClickStartReq, db: Session = Depends(get
         script_text=req.script_text,
         user_id=str(current_user.id),
         llm_model=req.llm_model,
+        team_id=req.team_id,
     )
     # 标记为一键模式
     session = short_drama_workflow.get_session(sid)
@@ -430,6 +434,7 @@ class LiteStoryboardReq(BaseModel):
     story_type: Optional[str] = None           # 故事类型（可选）
     art_style: Optional[str] = None            # 美术风格（可选）
     llm_model: Optional[str] = None            # 用户选择的语言大模型
+    team_id: Optional[str] = None              # 团队 ID（可选）
 
 
 @router.post("/short-drama/lite-storyboard")
@@ -446,6 +451,7 @@ async def short_drama_lite_storyboard(req: LiteStoryboardReq, current_user: User
         script_text=req.script_text,
         user_id=str(current_user.id),
         llm_model=req.llm_model,
+        team_id=req.team_id,
     )
     # 将 lite 参数写入 session options
     session = short_drama_workflow.get_session(sid)
@@ -672,6 +678,7 @@ async def short_drama_finalize(req: ShortDramaFinalizeReq, db: Session = Depends
                 session,
                 canvas_id=UUID(req.canvas_id) if req.canvas_id else None,
                 user_id=str(current_user.id),
+                team_id=session.get("team_id"),
             )
         canvas = result["canvas"]
         db.commit()

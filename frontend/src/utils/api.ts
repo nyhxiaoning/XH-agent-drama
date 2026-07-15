@@ -462,10 +462,10 @@ export const api = {
   removeTeamMember: (teamId: string, userId: string) => request<void>(`/teams/${teamId}/members/${userId}`, { method: 'DELETE' }),
 
   // Short Drama Agent Workflow
-  shortDramaStart: (prompt: string, mode?: string, scriptText?: string, llmModel?: string) =>
+  shortDramaStart: (prompt: string, mode?: string, scriptText?: string, llmModel?: string, teamId?: string) =>
     request<{ session_id: string; session: AgentSession }>('/agent/short-drama/start', {
       method: 'POST',
-      body: JSON.stringify({ prompt, mode: mode || 'inspiration', script_text: scriptText, llm_model: llmModel }),
+      body: JSON.stringify({ prompt, mode: mode || 'inspiration', script_text: scriptText, llm_model: llmModel, team_id: teamId }),
     }),
   shortDramaStep: (sessionId: string, step: string) =>
     request<{ step: string; data: Record<string, unknown>; session: AgentSession }>(
@@ -581,10 +581,10 @@ export const api = {
     request<{ status: string; elapsed_seconds?: number; config?: Record<string, unknown>; error?: string; error_type?: string; hint?: string }>('/agent/llm-ping'),
 
   // 轻量分镜模式
-  liteStoryboardStart: (scriptText: string, storyType?: string, artStyle?: string, llmModel?: string) =>
+  liteStoryboardStart: (scriptText: string, storyType?: string, artStyle?: string, llmModel?: string, teamId?: string) =>
     request<{ session_id: string; session: AgentSession }>('/agent/short-drama/lite-storyboard', {
       method: 'POST',
-      body: JSON.stringify({ script_text: scriptText, story_type: storyType, art_style: artStyle, llm_model: llmModel }),
+      body: JSON.stringify({ script_text: scriptText, story_type: storyType, art_style: artStyle, llm_model: llmModel, team_id: teamId }),
     }),
   liteStoryboardStream: async (
     sessionId: string,
@@ -628,10 +628,10 @@ export const api = {
   },
 
   // 一键创作模式
-  oneClickStart: (prompt: string, mode?: string, scriptText?: string, llmModel?: string) =>
+  oneClickStart: (prompt: string, mode?: string, scriptText?: string, llmModel?: string, teamId?: string) =>
     request<{ session_id: string; session: AgentSession }>('/agent/short-drama/one-click', {
       method: 'POST',
-      body: JSON.stringify({ prompt, mode: mode || 'inspiration', script_text: scriptText, llm_model: llmModel }),
+      body: JSON.stringify({ prompt, mode: mode || 'inspiration', script_text: scriptText, llm_model: llmModel, team_id: teamId }),
     }),
   oneClickStream: async (
     sessionId: string,

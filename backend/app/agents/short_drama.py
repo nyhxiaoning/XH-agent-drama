@@ -3248,6 +3248,7 @@ class ShortDramaWorkflow:
         script_text: Optional[str] = None,
         user_id: Optional[str] = None,
         llm_model: Optional[str] = None,
+        team_id: Optional[str] = None,
     ) -> str:
         """创建会话。
 
@@ -3332,7 +3333,7 @@ class ShortDramaWorkflow:
                 "start.llm_model": llm_model,
             } if llm_model else {},
         }
-        return get_store().create(prompt, mode=mode, user_id=user_id, initial_data=initial_data)
+        return get_store().create(prompt, mode=mode, user_id=user_id, team_id=team_id, initial_data=initial_data)
 
     def get_session(self, sid: str) -> Optional[Dict[str, Any]]:
         return get_store().get(sid)
@@ -3745,13 +3746,14 @@ class ShortDramaWorkflow:
         options = self.get_options(sid)
         image_model = options.get("asset.image_model", options.get("assets.image_model", settings.IMAGE_MODEL_GPT_IMAGE_2))
         session_user_id = session.get("user_id")
+        session_team_id = session.get("team_id")
 
         locked = []
         asset_ids = []
         for char in assets_data.get("characters", []):
             if char.get("char_id") in char_ids:
                 asset_info = await self._generate_asset_image(
-                    db, char.get("name", "角色"), "character", char.get("base_prompt", ""), char.get("visual_anchor", ""), image_model, user_id=session_user_id
+                    db, char.get("name", "角色"), "character", char.get("base_prompt", ""), char.get("visual_anchor", ""), image_model, user_id=session_user_id, team_id=session_team_id
                 )
                 locked.append({"type": "character", **char, **asset_info})
                 asset_ids.append(asset_info["asset_id"])
@@ -3759,7 +3761,7 @@ class ShortDramaWorkflow:
         for scene in assets_data.get("scenes", []):
             if scene.get("scene_id") in scene_ids:
                 asset_info = await self._generate_asset_image(
-                    db, scene.get("name", "场景"), "scene", scene.get("base_prompt", ""), "", image_model, user_id=session_user_id
+                    db, scene.get("name", "场景"), "scene", scene.get("base_prompt", ""), "", image_model, user_id=session_user_id, team_id=session_team_id
                 )
                 locked.append({"type": "scene", **scene, **asset_info})
                 asset_ids.append(asset_info["asset_id"])
@@ -3771,7 +3773,7 @@ class ShortDramaWorkflow:
         return {"status": "success", "locked_assets": locked, "asset_ids": asset_ids}
 
     async def _generate_asset_image(
-        self, db: Session, name: str, asset_type: str, prompt: str, description: str, image_model: Optional[str] = None, user_id: Optional[str] = None
+        self, db: Session, name: str, asset_type: str, prompt: str, description: str, image_model: Optional[str] = None, user_id: Optional[str] = None, team_id: Optional[str] = None
     ) -> Dict[str, str]:
         """调用 AI 生图；失败时返回 SVG 占位图。"""
         from app.api.v1.asset import UPLOAD_DIR, STATIC_URL_PREFIX
@@ -3827,6 +3829,7 @@ class ShortDramaWorkflow:
                         mime_type=f"image/{ext.lstrip('.')}" if ext.lstrip('.') in {"png", "jpg", "jpeg", "webp", "gif"} else "image/png",
                         file_size=len(content),
                         user_id=user_id,
+                        team_id=uuid.UUID(team_id) if team_id else None,
                     )
                     return {
                         "asset_id": str(asset.id),
@@ -3871,6 +3874,7 @@ class ShortDramaWorkflow:
             mime_type="image/svg+xml",
             file_size=len(svg.encode("utf-8")),
             user_id=user_id,
+            team_id=uuid.UUID(team_id) if team_id else None,
         )
         return {
             "asset_id": str(asset.id),

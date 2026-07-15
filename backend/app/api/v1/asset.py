@@ -179,6 +179,7 @@ async def upload_asset(
 def list_assets(
     asset_type: AssetType = None,
     canvas_id: Optional[str] = None,
+    team_id: Optional[str] = None,
     q: str = None,
     skip: int = 0,
     limit: int = 50,
@@ -194,6 +195,26 @@ def list_assets(
     user_id = str(current_user.id)
     teams = team_crud.get_user_teams(db, user_id=user_id)
     team_ids = [t.id for t in teams]
+
+    # 如果指定了 team_id，仅返回该团队的资产（校验成员身份）
+    if team_id:
+        try:
+            team_uuid = UUID(team_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="team_id 格式错误")
+        if team_uuid not in team_ids:
+            raise HTTPException(status_code=403, detail="你不是该团队成员")
+        return crud_asset.get_assets(
+            db,
+            user_id=None,
+            team_ids=[team_uuid],
+            canvas_id=canvas_uuid,
+            asset_type=asset_type,
+            query=q,
+            skip=skip,
+            limit=limit,
+        )
+
     return crud_asset.get_assets(
         db,
         user_id=user_id,
