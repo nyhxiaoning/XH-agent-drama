@@ -1,2 +1,0 @@
-[console_scripts]
-film-prompts = cultural_film_prompts.cli:app
