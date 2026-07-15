@@ -204,7 +204,7 @@ export function NodePropertyPopup({ node, screenX, screenY, nodeWidth, nodeHeigh
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [node.id]);
 
-  // 弹窗固定在节点卡片下方，左对齐；下方放不下则放上方
+  // 弹窗固定在节点卡片下方，左对齐
   // 用户拖拽后不再自动跟随，直到切换节点
   useLayoutEffect(() => {
     if (userDraggedRef.current) return;
@@ -213,22 +213,18 @@ export function NodePropertyPopup({ node, screenX, screenY, nodeWidth, nodeHeigh
     const rect = el.getBoundingClientRect();
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    const gap = 12;
-    // 默认放节点下方，左对齐
+    const gap = 8;
+    // 固定放节点下方，左对齐
     let x = screenX;
     let y = screenY + nodeHeight + gap;
-    // 水平边界检测
+    // 水平边界检测：超出右侧则右对齐到视口
     if (x + rect.width > vw - 8) {
       x = Math.max(8, vw - rect.width - 8);
     }
     if (x < 8) x = 8;
-    // 垂直边界：下方放不下则放上方
+    // 垂直边界：下方放不下时向上贴齐，但不翻到节点上方
     if (y + rect.height > vh - 8) {
-      y = screenY - gap - rect.height;
-    }
-    // 上方也放不下，居中
-    if (y < 8) {
-      y = Math.max(8, Math.min(vh - rect.height - 8, (vh - rect.height) / 2));
+      y = Math.max(8, vh - rect.height - 8);
     }
     setPosition({ x, y });
   }, [screenX, screenY, nodeWidth, nodeHeight, scale]);
@@ -568,11 +564,23 @@ export function NodePropertyPopup({ node, screenX, screenY, nodeWidth, nodeHeigh
     node.node_type === 'video' && config.start_end_frame ? 'start_end' : null,
   ].filter(Boolean).length;
 
+  // 点击外部关闭弹窗（不阻挡节点卡片的点击）
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      // 点击弹窗内部不关闭
+      if (popupRef.current?.contains(e.target as Node)) return;
+      // 点击节点卡片不关闭（让卡片自己处理选中）
+      if ((e.target as HTMLElement).closest('.node-card')) return;
+      // 点击其他 UI（如工具栏、弹窗内选择器）不关闭
+      if ((e.target as HTMLElement).closest('.no-pan')) return;
+      onClose();
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [onClose]);
+
   return (
     <>
-      {/* 遮罩层，点击关闭 */}
-      <div className="fixed inset-0 z-40 no-pan" onClick={onClose} />
-
       <div
         ref={popupRef}
         className="fixed z-[100] w-[760px] max-h-[80vh] rounded-3xl shadow-soft-lg flex flex-col no-pan panel-solid border border-panel-border"

@@ -948,11 +948,15 @@ loadRuntimeModels();
         const node = canvas.nodes.find((n) => n.id === selectedNodeId);
         if (!node) return null;
         const nodeActualHeight = nodeHeightsRef.current.get(node.id) ?? node.height ?? 160;
+        // 画布容器的视口偏移（fixed 定位需要视口坐标，而非画布内部坐标）
+        const canvasRect = canvasRef.current?.getBoundingClientRect();
+        const rectLeft = canvasRect?.left ?? 0;
+        const rectTop = canvasRect?.top ?? 0;
         return (
           <NodePropertyPopup
             node={node}
-            screenX={node.x * scale + offset.x}
-            screenY={node.y * scale + offset.y}
+            screenX={node.x * scale + offset.x + rectLeft}
+            screenY={node.y * scale + offset.y + rectTop}
             nodeWidth={node.width * scale}
             nodeHeight={nodeActualHeight * scale}
             scale={scale}
