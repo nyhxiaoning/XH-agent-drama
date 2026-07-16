@@ -135,7 +135,7 @@ export default function LoginPage() {
 
         {error && (
           <div className="error-alert mb-4">
-            {error}
+            <span className="text-sm">{error}</span>
           </div>
         )}
 

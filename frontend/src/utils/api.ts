@@ -17,13 +17,19 @@ export function getAuthHeaders(isFormData = false): Record<string, string> {
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const fullUrl = url.startsWith('http') ? url : `${API_BASE}${url}`;
   const isFormData = typeof FormData !== 'undefined' && options?.body instanceof FormData;
-  const res = await fetch(fullUrl, {
-    ...options,
-    headers: {
-      ...getAuthHeaders(isFormData),
-      ...(options?.headers || {}),
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(fullUrl, {
+      ...options,
+      headers: {
+        ...getAuthHeaders(isFormData),
+        ...(options?.headers || {}),
+      },
+    });
+  } catch {
+    // 网络错误（代理 502、DNS 失败等）
+    throw new Error('无法连接到服务器，请确认后端服务已启动（localhost:8000）');
+  }
   if (!res.ok) {
     // 401: Token 过期或无效，自动清除登录状态并跳转登录页
     if (res.status === 401) {
@@ -37,6 +43,19 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
     const text = await res.text().catch(() => '');
     let err: { message?: string; detail?: string } = {};
     try { err = text ? JSON.parse(text) : {}; } catch {}
+
+    // 根据 HTTP 状态码生成更友好的中文提示
+    const friendlyMessages: Record<number, string> = {
+      502: '后端服务暂时不可用，请稍后重试',
+      503: '服务暂时不可用，请稍后重试',
+      504: '后端服务响应超时，请稍后重试',
+      429: '请求过于频繁，请稍后再试',
+    };
+    const friendlyMessage = friendlyMessages[res.status];
+    if (friendlyMessage) {
+      throw new Error(friendlyMessage);
+    }
+
     throw new Error(err.message || err.detail || `请求失败 (${res.status})`);
   }
   const text = await res.text();
